@@ -1,0 +1,87 @@
+name: APK
+
+# Her push'ta derle ve artifact olarak yükle; v*.*.* tag'inde GitHub Release'e koy.
+on:
+  push:
+    branches: ["main", "claude/**"]
+    tags: ["v*.*.*"]
+    paths-ignore: ["docs/**", "devices/**", "**/*.md"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: receiver
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "21"
+          cache: gradle
+
+      # NDK sürümü receiver/app/build.gradle.kts'teki ndkVersion ile aynı olmalı.
+      - name: NDK
+        run: echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.0.12077973" > /dev/null
+
+      # Release anahtarı secret olarak tanımlıysa kullan; yoksa build.gradle.kts debug anahtarına düşer.
+      - name: Release anahtarı
+        env:
+          STORE_B64: ${{ secrets.RELEASE_KEYSTORE_B64 }}
+          STORE_PASS: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$STORE_B64" ]; then
+            echo "$STORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "storeFile=$RUNNER_TEMP/release.jks"
+              echo "storePassword=$STORE_PASS"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASS"
+            } > local.properties
+            echo "Release anahtarıyla imzalanacak."
+          else
+            echo "::warning::RELEASE_KEYSTORE_B64 tanımlı değil; APK debug anahtarıyla imzalanacak (her CI makinesinde farklı olabilir, güncellemede kaldır-kur gerekebilir)."
+          fi
+
+      - name: Derle
+        run: |
+          export SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --stacktrace
+          rm -f local.properties
+
+      - name: APK'yı adlandır ve sha256 üret
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk out/tvmirror.apk
+          cd out && sha256sum tvmirror.apk > tvmirror.apk.sha256 && cat tvmirror.apk.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tvmirror-${{ github.sha }}
+          path: |
+            receiver/out/tvmirror.apk
+            receiver/out/tvmirror.apk.sha256
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            receiver/out/tvmirror.apk
+            receiver/out/tvmirror.apk.sha256
