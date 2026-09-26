@@ -8,7 +8,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
-import io.github.jqssun.airplay.Experiments
 import io.github.jqssun.airplay.renderer.DecoderSelector.Companion.videoCaps
 
 class VideoRenderer(ctx: Context) {
@@ -168,8 +167,7 @@ class VideoRenderer(ctx: Context) {
         benchmarkLogCallback?.invoke(msg)
     }
 
-    fun feedFrame(frame: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
-        val data = if (Experiments.limitedRange && !isH265) SpsRange.limitH264(frame) else frame
+    fun feedFrame(data: ByteArray, ntpTimeNs: Long, isH265: Boolean) {
         synchronized(lock) {
             _updateStats(data.size)
             if (videoWidth == 0 || videoHeight == 0) return
