@@ -135,7 +135,7 @@ on deviceState(tv)
 	if matchedDev is not missing value then
 		return matchedDev
 	end if
-	if (count of devTris) ≥ 1 and (count of devBoxes) is 0 then return {"on", item 1 of devTris}
+	if (count of devTris) > 0 and (count of devBoxes) is 0 then return {"on", item 1 of devTris}
 	if (count of devBoxes) is 1 and (count of devTris) is 0 then return {"off", item 1 of devBoxes}
 	my closePanel()
 	error "'" & tv & "' secilemedi: " & (count of devBoxes) & " kapali + " & (count of devTris) & " acik cihaz (probe ciktisini gonderin)"
