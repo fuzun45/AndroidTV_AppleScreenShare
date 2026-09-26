@@ -39,6 +39,7 @@ class VideoPipeline {
     @Volatile private var frameAvailable = false
     private var pendingDisplay: Surface? = null
     private var displayDirty = false
+    private var clearRequested = false
     @Volatile private var videoW = 0
     @Volatile private var videoH = 0
 
@@ -52,6 +53,12 @@ class VideoPipeline {
     fun setDisplaySurface(surface: Surface?) = synchronized(lock) {
         pendingDisplay = surface
         displayDirty = true
+        lock.notifyAll()
+    }
+
+    // drop the last frame so a previous session never reappears on the display
+    fun clear() = synchronized(lock) {
+        clearRequested = true
         lock.notifyAll()
     }
 
@@ -89,8 +96,9 @@ class VideoPipeline {
             var newDisplay: Surface? = null
             var displayChanged = false
             var doFrame = false
+            var doClear = false
             synchronized(lock) {
-                while (running && !frameAvailable && !displayDirty) lock.wait()
+                while (running && !frameAvailable && !displayDirty && !clearRequested) lock.wait()
                 if (running && displayDirty) {
                     newDisplay = pendingDisplay
                     displayChanged = true
@@ -100,8 +108,18 @@ class VideoPipeline {
                     frameAvailable = false
                     doFrame = true
                 }
+                if (running && clearRequested) {
+                    clearRequested = false
+                    doClear = true
+                }
             }
             if (!running) break
+            if (doClear) {
+                // a frame pending at clear time belongs to the old session: consume, don't show
+                if (doFrame) _consumeOnly()
+                doFrame = false
+                _clear()
+            }
             if (displayChanged) _bindDisplay(newDisplay)
             if (doFrame) _consumeAndDraw()
         }
@@ -143,6 +161,24 @@ class VideoPipeline {
         st.getTransformMatrix(texMatrix)
         hasFrame = true
         _render()
+    }
+
+    private fun _consumeOnly() {
+        val st = surfaceTexture ?: return
+        val egl = egl ?: return
+        if (window == EGL14.EGL_NO_SURFACE) egl.makeCurrent() else egl.makeCurrent(window)
+        st.updateTexImage()
+    }
+
+    private fun _clear() {
+        hasFrame = false
+        val egl = egl ?: return
+        if (window == EGL14.EGL_NO_SURFACE) return
+        egl.makeCurrent(window)
+        GLES20.glViewport(0, 0, winW, winH)
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        egl.swap(window)
     }
 
     private fun _render() {
