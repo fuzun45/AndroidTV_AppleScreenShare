@@ -18,15 +18,24 @@ case "$ACTION" in probe|start|stop) ;; *) echo "Kullanim: $0 {probe|start|stop} 
 [ "$(uname -s)" = "Darwin" ] || { echo "Bu script yalnizca macOS'ta calisir." >&2; exit 2; }
 
 osascript - "$ACTION" "$TV" <<'APPLESCRIPT'
+-- Ogenin aciklamasi | adi | AXIdentifier'i. System Events baglaminda okunmali,
+-- aksi halde ozellikler cozulmez ve bos doner.
 on descOf(el)
 	set t to ""
-	try
-		set t to (description of el) as text
-	end try
-	try
-		set n to (name of el)
-		if n is not missing value then set t to t & " | " & (n as text)
-	end try
+	tell application "System Events"
+		try
+			set d to description of el
+			if d is not missing value then set t to (d as text)
+		end try
+		try
+			set n to name of el
+			if n is not missing value then set t to t & " | " & (n as text)
+		end try
+		try
+			set i to value of attribute "AXIdentifier" of el
+			if i is not missing value then set t to t & " | " & (i as text)
+		end try
+	end tell
 	return t
 end descOf
 
@@ -50,7 +59,7 @@ on openMirroringPanel()
 		set opened to false
 		repeat with mbi in (menu bar items of menu bar 1)
 			set t to my descOf(mbi)
-			if (t contains "Control Center") or (t contains "Denetim Merkezi") then
+			if (t contains "Control Center") or (t contains "Denetim Merkezi") or (t contains "controlcenter") then
 				click mbi
 				set opened to true
 				exit repeat
