@@ -51,6 +51,7 @@ class VideoRenderer(ctx: Context) {
         videoWidth = w
         videoHeight = h
         pipeline.setVideoSize(w, h)
+        if (MirrorStats.ENABLED) MirrorStats.setReceived(w, h)
     }
 
     // doesn't restart codec; decoder renders into pipeline's own persistent surface
@@ -127,6 +128,7 @@ class VideoRenderer(ctx: Context) {
                 // a stale reference frame decodes to corruption, so wait for a keyframe to (re)start
                 if (!_isKeyframe(data, isH265)) {
                     if (codec != null) stopCodec()
+                    if (MirrorStats.ENABLED) MirrorStats.onDropped()
                     return
                 }
                 stopCodec()
@@ -155,11 +157,13 @@ class VideoRenderer(ctx: Context) {
                 buf.put(data)
                 c.queueInputBuffer(idx, 0, data.size, ntpTimeNs / 1000, 0)
                 firstFrameQueued = true
+                if (MirrorStats.ENABLED) MirrorStats.onFrameIn()
                 return
             }
             drainOutput()
         }
         droppedFrames++
+        if (MirrorStats.ENABLED) MirrorStats.onDropped()
         Log.w(TAG, "Decoder input queue full; dropping frame. drops=$droppedFrames")
     }
 
@@ -246,6 +250,7 @@ class VideoRenderer(ctx: Context) {
         }
         codec = c
         codecName = (if (h265) "H.265" else "H.264") + " (${c.name})"
+        if (MirrorStats.ENABLED) MirrorStats.onSessionStart(h265, c.name)
     }
 
     private fun stopCodec() {
@@ -261,6 +266,7 @@ class VideoRenderer(ctx: Context) {
             } catch (_: Exception) {}
         }
         codec = null
+        if (MirrorStats.ENABLED) MirrorStats.onSessionEnd()
     }
 
     private fun drainOutput() {
@@ -281,6 +287,7 @@ class VideoRenderer(ctx: Context) {
             } else {
                 c.releaseOutputBuffer(idx, true)
             }
+            if (MirrorStats.ENABLED) MirrorStats.onFrameOut()
         }
     }
 

@@ -47,6 +47,7 @@ import io.github.jqssun.airplay.discovery.NsdServiceManager
 import io.github.jqssun.airplay.download.VideoDownloader
 import io.github.jqssun.airplay.renderer.AirPlayVideoPlayer
 import io.github.jqssun.airplay.renderer.AudioRenderer
+import io.github.jqssun.airplay.renderer.MirrorStats
 import io.github.jqssun.airplay.renderer.VideoRenderer
 import io.github.jqssun.airplay.viewmodel.DebugInfo
 import java.net.NetworkInterface
@@ -410,6 +411,7 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
         _videoResolution.value = "${w}x${h}"
         _videoAspect.value = w.toFloat() / h
         NativeBridge.nativeSetDisplaySize(nativeHandle, w, h, maxFps)
+        if (MirrorStats.ENABLED) MirrorStats.setRequested(w, h, maxFps)
 
         val requestedPort = prefs.getInt(Prefs.SERVER_PORT, Prefs.DEF_SERVER_PORT).coerceIn(1, 65535)
         val port = NativeBridge.nativeStart(nativeHandle, requestedPort)
@@ -467,7 +469,9 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
         if (nativeHandle == 0L || _serverState.value != ServerState.RUNNING) return
         if (!_orientationFollowsDevice()) return
         val (w, h) = _displaySize()
-        NativeBridge.nativeSetDisplaySize(nativeHandle, w, h, prefs.getInt(Prefs.MAX_FPS, Prefs.DEF_MAX_FPS))
+        val maxFps = prefs.getInt(Prefs.MAX_FPS, Prefs.DEF_MAX_FPS)
+        NativeBridge.nativeSetDisplaySize(nativeHandle, w, h, maxFps)
+        if (MirrorStats.ENABLED) MirrorStats.setRequested(w, h, maxFps)
         log("Advertising ${w}x${h} from next session")
     }
 
@@ -635,6 +639,16 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
         clearPin()
         audioRenderer.start()
         audioRenderer.setFormat(ct, spf)
+        if (MirrorStats.ENABLED) {
+            MirrorStats.setAudio(
+                when (ct) {
+                    AudioRenderer.CT_ALAC -> "ALAC"
+                    AudioRenderer.CT_AAC_LC -> "AAC-LC"
+                    AudioRenderer.CT_AAC_ELD -> "AAC-ELD"
+                    else -> "unknown"
+                }
+            )
+        }
         if (!usingScreen) _setPlaying(true)
         if (!usingScreen && !_audioOnly.value) {
             // pure music streaming (not screen mirroring audio)
@@ -810,6 +824,7 @@ class AirPlayService : LifecycleService(), RaopCallbackHandler, LogListener {
         if (running) videoRenderer.startSession() else {
             videoRenderer.stopSession()
             _mirroringActive.value = false
+            if (MirrorStats.ENABLED) MirrorStats.setAudio("none")
         }
         _setAudioOnly(!running)
     }
