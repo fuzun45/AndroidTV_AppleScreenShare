@@ -33,7 +33,9 @@ object Prefs {
     const val AAC_ENABLED = "aac_enabled"; const val DEF_AAC_ENABLED = true
     // 1080p: at 4K this TV composites the mirror layer on the GPU and drops ~30% of frames
     const val RESOLUTION = "resolution"; const val DEF_RESOLUTION = "1920x1080"
-    const val MAX_FPS = "max_fps"; const val DEF_MAX_FPS = 60
+    // the mirror layer is GPU-composited here and tops out near 25 fps; asking senders for 60
+    // only makes half the frames drop unevenly and wastes decode, network and memory
+    const val MAX_FPS = "max_fps"; const val DEF_MAX_FPS = 30
     const val OVERSCANNED = "overscanned"; const val DEF_OVERSCANNED = false
     const val REQUIRE_PIN = "require_pin"; const val DEF_REQUIRE_PIN = false
     const val ALLOW_NEW_CONN = "allow_new_conn"; const val DEF_ALLOW_NEW_CONN = true
