@@ -7,6 +7,9 @@ _common_sh_path="${BASH_SOURCE[0]:-$0}"
 COMMON_SH_DIR="$(cd "$(dirname "$_common_sh_path")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd "$COMMON_SH_DIR/../.." >/dev/null 2>&1 && pwd)"
 
+# Sayılar her yerde nokta ondalıklı olsun (Türkçe yerelde awk/printf "32,5" üretiyor)
+export LC_ALL=C
+
 # --- Varsayilanlar (env ile override edilebilir) ---
 ADB="${ADB:-/opt/homebrew/share/android-commandlinetools/platform-tools/adb}"
 DEV="${DEV:-192.168.1.104:5555}"

@@ -33,6 +33,8 @@ while ! mirroring_active; do
 done
 log_ok "Mirroring aktif, olcum basliyor."
 
+# Decoder seçimi sunucu başlarken loglanıyor; logcat temizlenmeden önce sakla.
+adbs logcat -d > "$OUT/logcat-before.txt"
 adbs logcat -c
 
 log_info "Video SurfaceView katmani seciliyor..."
@@ -97,6 +99,7 @@ adbs logcat -d -s TvMirrorStats:* > "$OUT/tvmirrorstats.log"
 
 log_info "Decoder secim loglari..."
 adbs logcat -d > "$OUT/logcat-full.txt"
+cat "$OUT/logcat-before.txt" >> "$OUT/logcat-full.txt"
 safe_grep -iE 'DecoderSelector|MediaCodec|low-latency|vdec' "$OUT/logcat-full.txt" | tail -n 200 > "$OUT/decoder-selection.log"
 # HEVC/AVC secimiyle ilgili satirlar; TvMirrorStats'in saniyelik durum satirlari haric.
 safe_grep -viE 'TvMirrorStats' "$OUT/logcat-full.txt" \

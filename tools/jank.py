@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -142,7 +143,9 @@ def collect(adb, device, layer, seconds, interval):
 
     while time.time() < end_time:
         out = run_adb(
-            adb, device, ["shell", "dumpsys", "SurfaceFlinger", "--latency", layer]
+            # katman adi "(BLAST)#123" icerir: uzak kabukta "(" soz dizimi hatasi, "#" yorum
+            # baslatir. Tek tirnakla aynen iletilmeli.
+            adb, device, ["shell", "dumpsys", "SurfaceFlinger", "--latency", shlex.quote(layer)]
         )
         if not out.strip():
             # katman gitmis olabilir (mirror oturumu bitti)
