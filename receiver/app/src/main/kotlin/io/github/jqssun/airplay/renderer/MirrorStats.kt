@@ -24,6 +24,7 @@ object MirrorStats {
     @Volatile private var codecLabel = ""
     @Volatile private var decoderName = ""
     @Volatile private var audioLabel = "none"
+    @Volatile private var outputLabel = "none"
 
     private val framesIn = AtomicLong(0)
     private val framesOut = AtomicLong(0)
@@ -47,6 +48,12 @@ object MirrorStats {
     fun setReceived(w: Int, h: Int) {
         if (!ENABLED) return
         recvW = w; recvH = h
+    }
+
+    // codec output path: "direct" (display surface) or "gl" (pipeline sink)
+    fun setOutput(label: String) {
+        if (!ENABLED) return
+        outputLabel = label
     }
 
     fun setAudio(label: String) {
@@ -119,6 +126,7 @@ object MirrorStats {
         lastEmitMs = now
         Log.i(TAG, "req=${reqW}x${reqH}@$reqFps recv=${recvW}x${recvH} codec=$codecLabel " +
             "decoder=$decoderName in_fps=${String.format(Locale.US, "%.1f", inFps)} " +
-            "dec_fps=${String.format(Locale.US, "%.1f", decFps)} dropped=${dropped.get()} audio=$audioLabel")
+            "dec_fps=${String.format(Locale.US, "%.1f", decFps)} dropped=${dropped.get()} audio=$audioLabel " +
+            "out=$outputLabel")
     }
 }

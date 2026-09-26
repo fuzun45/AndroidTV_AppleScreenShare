@@ -69,9 +69,11 @@ class VideoRenderer(ctx: Context) {
         try {
             c.setOutputSurface(surface)
             codecTarget = surface
+            _onOutput("direct")
         } catch (e: Exception) {
             Log.w(TAG, "setOutputSurface to display failed; using GL pipeline", e)
             pipeline.setDisplaySurface(surface)
+            _onOutput("gl")
         }
     }
 
@@ -84,6 +86,7 @@ class VideoRenderer(ctx: Context) {
             try {
                 c.setOutputSurface(pipeline.inputSurface ?: return@synchronized)
                 codecTarget = pipeline.inputSurface
+                _onOutput("gl")
             } catch (e: Exception) {
                 Log.w(TAG, "setOutputSurface to sink failed; stopping codec", e)
                 stopCodec()
@@ -246,7 +249,15 @@ class VideoRenderer(ctx: Context) {
             _startOn(sw, mime, s, sink, display, h265)
         }
         Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight} ($codecName) " +
-            "output=${if (codecTarget === display && display != null) "direct" else "gl"}")
+            "output=${_outputLabel()}")
+        if (MirrorStats.ENABLED) MirrorStats.setOutput(_outputLabel())
+    }
+
+    private fun _outputLabel() = if (codecTarget != null && codecTarget === displaySurface) "direct" else "gl"
+
+    private fun _onOutput(label: String) {
+        Log.i(TAG, "output switched: $label")
+        if (MirrorStats.ENABLED) MirrorStats.setOutput(label)
     }
 
     // tries the display first; if the codec refuses it, falls back to the GL pipeline sink
@@ -324,7 +335,10 @@ class VideoRenderer(ctx: Context) {
         }
         codec = null
         codecTarget = null
-        if (MirrorStats.ENABLED) MirrorStats.onSessionEnd()
+        if (MirrorStats.ENABLED) {
+            MirrorStats.setOutput("none")
+            MirrorStats.onSessionEnd()
+        }
     }
 
     private fun drainOutput() {

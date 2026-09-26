@@ -435,6 +435,8 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
     fun bindService(svc: AirPlayService) {
         service = svc
         updateFromService()
+        // a surface created before the service connected was dropped; hand it over now
+        _videoSurface?.takeIf { it.isValid }?.let { svc.setVideoSurface(it) }
     }
 
     fun unbindService() {
@@ -449,11 +451,15 @@ class MainViewModel @Inject constructor(app: Application) : AndroidViewModel(app
         service?.stopServer()
     }
 
+    private var _videoSurface: Surface? = null
+
     fun onSurfaceAvailable(surface: Surface) {
+        _videoSurface = surface
         service?.setVideoSurface(surface)
     }
 
     fun onSurfaceDestroyed(surface: Surface) {
+        if (_videoSurface === surface) _videoSurface = null
         service?.clearVideoSurface(surface)
     }
 
