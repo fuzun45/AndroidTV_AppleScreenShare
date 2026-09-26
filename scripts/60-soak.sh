@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 60-soak.sh - Yari-manuel dayaniklilik (soak) testleri.
 # Kullanim:
-#   60-soak.sh connect-cycles N
+#   60-soak.sh connect-cycles N          (elle: her adimda Enter)
+#   AUTO=1 60-soak.sh connect-cycles N   (Mac: scripts/mac-mirror.sh ile otomatik; HOLD_SEC=15)
 #   60-soak.sh boot-cycles N
 #   60-soak.sh long <dakika>
 # Not: Bellek/kaynak sizintisi icin bu scripti 65-leak-watch.sh ile paralel
@@ -55,6 +56,26 @@ check_crash() {
     [ "${n:-0}" -le "$CRASH_BASE" ]
 }
 
+# AUTO=1: Mac'te yansitmayi scripts/mac-mirror.sh ile otomatik baslat/durdur.
+# HOLD_SEC: her cevrimde yansitma acik kalma suresi.
+AUTO="${AUTO:-0}"
+HOLD_SEC="${HOLD_SEC:-15}"
+AIRPLAY_NAME="${AIRPLAY_NAME:-Salon TV}"
+
+# wait_layer present|absent SANIYE: katman gorunene / kaybolana kadar bekler.
+wait_layer() {
+    local want="$1" t=0
+    while [ "$t" -lt "$2" ]; do
+        if [ -n "$(app_surfaceview_layer)" ]; then
+            [ "$want" = "present" ] && return 0
+        else
+            [ "$want" = "absent" ] && return 0
+        fi
+        sleep 1; t=$((t + 1))
+    done
+    return 1
+}
+
 case "$MODE" in
     connect-cycles)
         N="${ARG:-1}"
@@ -63,16 +84,30 @@ case "$MODE" in
         i=1
         while [ "$i" -le "$N" ]; do
             printf '\n--- Cevrim %d/%d ---\n' "$i" "$N"
-            printf 'Iphone/Mac uzerinden mirroring BASLATIN, sonra Enter tusuna basin...\n'
-            read -r _
-            sleep 2
-            [ -n "$(app_surfaceview_layer)" ] \
+            started="EVET"
+            if [ "$AUTO" = "1" ]; then
+                "$SCRIPT_DIR/mac-mirror.sh" start "$AIRPLAY_NAME" || log_warn "mac-mirror start hata verdi"
+                wait_layer present 25 || started="HAYIR"
+            else
+                printf 'Iphone/Mac uzerinden mirroring BASLATIN, sonra Enter tusuna basin...\n'
+                read -r _
+                sleep 2
+                [ -n "$(app_surfaceview_layer)" ] || started="HAYIR"
+            fi
+            [ "$started" = "EVET" ] \
                 && log_ok "SurfaceView katmani goruldu (mirroring aktif gorunuyor)" \
                 || log_warn "SurfaceView katmani bulunamadi (yine de devam ediliyor)"
 
-            printf 'Simdi mirroring DURDURUN, sonra Enter tusuna basin...\n'
-            read -r _
-            sleep 3
+            if [ "$AUTO" = "1" ]; then
+                sleep "$HOLD_SEC"
+                "$SCRIPT_DIR/mac-mirror.sh" stop "$AIRPLAY_NAME" || log_warn "mac-mirror stop hata verdi"
+                wait_layer absent 10 || true
+                sleep 2
+            else
+                printf 'Simdi mirroring DURDURUN, sonra Enter tusuna basin...\n'
+                read -r _
+                sleep 3
+            fi
 
             no_crash="EVET"; check_crash "cycle$i" || { no_crash="HAYIR"; CRASH_FOUND=1; }
             proc_alive="EVET"; adbs pidof "$PKG" | grep -q '[0-9]' || proc_alive="HAYIR"
@@ -89,6 +124,7 @@ case "$MODE" in
             [ -n "$layer_after" ] && surface_clean="HAYIR"
 
             result="OK"
+            [ "$started" = "HAYIR" ] && result="FAIL(baslamadi)"
             [ "$no_crash" = "HAYIR" ] && result="FAIL(crash)"
             [ "$proc_alive" = "HAYIR" ] && result="FAIL(surec)"
             [ "$surface_clean" = "HAYIR" ] && [ "$result" = "OK" ] && result="UYARI(stale-layer)"
