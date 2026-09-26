@@ -93,7 +93,7 @@ on deviceState(tv)
 	my openMirroringPanel()
 	set boxes to {}
 	set tris to {}
-	set named to missing value
+	set matchedDev to missing value
 	tell application "System Events" to tell application process "ControlCenter"
 		repeat with wi from 1 to (count of windows)
 			set items_ to entire contents of window wi
@@ -117,15 +117,15 @@ on deviceState(tv)
 						try
 							set t to t & " | " & ((help of el) as text)
 						end try
-						if t contains tv then set named to {r, el}
+						if t contains tv then set matchedDev to {r, el}
 					end if
 				end if
 			end repeat
 		end repeat
 	end tell
-	if named is not missing value then
-		if (item 1 of named) is "AXDisclosureTriangle" then return {"on", item 2 of named}
-		return {"off", item 2 of named}
+	if matchedDev is not missing value then
+		if (item 1 of matchedDev) is "AXDisclosureTriangle" then return {"on", item 2 of matchedDev}
+		return {"off", item 2 of matchedDev}
 	end if
 	if (count of tris) is 1 and (count of boxes) is 0 then return {"on", item 1 of tris}
 	if (count of boxes) is 1 and (count of tris) is 0 then return {"off", item 1 of boxes}
