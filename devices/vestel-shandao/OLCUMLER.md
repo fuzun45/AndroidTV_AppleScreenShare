@@ -189,3 +189,8 @@ Canlı GL görüntü yolunda, yüzeyin servise iletilmesinde ve bayat kare temiz
 | Kapalı doğrudan çıkış kodu (`DIRECT_OUTPUT=false`) ölü kod olarak duruyor | bilinçli: tüm yolları bayrakla kapalı, çalışma zamanında etkisi yok; M5/M7 kaydı ve ileride tünelli oynatma denemesi için korunuyor |
 | MirrorStats ile upstream BENCHMARK satırı birbirini tekrar ediyor | bilinçli: ölçüm araçları TvMirrorStats biçimine bağlı |
 | 1080p/30 varsayılanı bu TV'ye özgü | bilinçli: bu depo bu TV için; ölçüm dayanağı M3–M9 |
+
+## v1.0.0 kuruldu (2026-09-26)
+
+- Release APK (`a7f84ce`, sabit anahtar `CN=TV Mirror`) kullanıcı tarafından kuruldu, denendi ve çalışıyor.
+- Sonraki adımlar: `docs/YOL-HARITASI.md` (önce debloat, sonra tünelli oynatma).

@@ -13,6 +13,7 @@ Alıcı, açık kaynak [`jqssun/android-airplay-server`](https://github.com/jqss
 3. **Ağ Ayarla**: [AG-REHBERI.md](docs/AG-REHBERI.md)
 4. **Performans Ölç**: [PERFORMANS.md](docs/PERFORMANS.md)
 5. **Güvenlik**: [GUVENLIK.md](docs/GUVENLIK.md)
+6. **Yol Haritası**: [YOL-HARITASI.md](docs/YOL-HARITASI.md)
 
 Özet: `./scripts/00-connect.sh` → `./scripts/30-install.sh <apk>` → iPhone/Mac'ten yansıt.
 
