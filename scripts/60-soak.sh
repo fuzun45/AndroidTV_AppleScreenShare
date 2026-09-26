@@ -80,10 +80,13 @@ case "$MODE" in
 
             layer_after="$(app_surfaceview_layer)"
             focus_after="$(adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp' | safe_grep "$PKG" || true)"
+            # Uygulama TV'de on planda kaldigi icin odak her zaman bizde; odak
+            # bayat katman kaniti degil, yalnizca kayit icin tutulur. Bayat
+            # katman = yansitma bittikten sonra video SurfaceView'inin hala
+            # listede olmasi (idle preview kapaliyken).
+            printf '%s\t%s\t%s\n' "$i" "${layer_after:-}" "${focus_after:-}" >> "$OUT/after-stop.tsv"
             surface_clean="EVET"
-            if [ -n "$layer_after" ] || [ -n "$focus_after" ]; then
-                surface_clean="HAYIR"
-            fi
+            [ -n "$layer_after" ] && surface_clean="HAYIR"
 
             result="OK"
             [ "$no_crash" = "HAYIR" ] && result="FAIL(crash)"
