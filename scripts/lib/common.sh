@@ -98,7 +98,8 @@ safe_grep() {
 # --- Uygulama süreci ölçümleri (PID üzerinden) ---
 # top uzun paket adlarını kırptığı için isimle grep güvenilir değil; PID kullanılıyor.
 app_pid() {
-    adbs pidof "$PKG" | tr -d '\r' | awk '{print $1}'
+    # adb hata metni ("error: ...") PID sanilmasin: yalnizca sayi dondur
+    adbs pidof "$PKG" | tr -d '\r' | awk '$1 ~ /^[0-9]+$/ {print $1; exit}'
 }
 
 # Toplam PSS (KB). Android 14: "TOTAL PSS:   52341   TOTAL RSS: ...";

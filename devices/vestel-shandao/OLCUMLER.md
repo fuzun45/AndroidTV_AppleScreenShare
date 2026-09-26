@@ -112,3 +112,15 @@ Yorum:
 
 - B, A'dan kötü değil; fark ölçüm gürültüsü içinde. **B son sürüm olarak kaldı.**
 - Gecikme fotoğrafı henüz yok; A/V senkron testiyle birlikte ölçülecek.
+
+## M10: otomatik bağlan/kopar ×20 + sızıntı izleme, 1cb029b, 2026-09-26 16:23–16:37
+
+- **Uygulama:**
+  - 20/20 çevrimde crash ya da ANR yok, süreç hep canlı.
+  - PSS 40–46 MB, trend yok.
+  - Thread sayısı oturumda 34–35, oturum bitince 30'a dönüyor.
+  - native ~7–8 MB, graphics 5.7–7.3 MB sabit. **Sızıntı işareti yok.**
+- **Belirsiz:** 5 çevrim "başlamadı", 8 çevrim "stop sonrası katman kaldı".
+  - Script, Mac tarafındaki start/stop sonucunu kaydetmediği için bunlar uygulamaya mal edilemedi.
+  - Ölçüm, her çevrimde Mac sonucunu, katmanın açılma/kapanma süresini ve alıcı olaylarını (bağlandı/koptu/codec) ayrı ayrı yazacak şekilde genişletildi. Test tekrarlanacak.
+- Araç düzeltmesi: `65-leak-watch` ilk örnekte adb hata metnini PID sanıp sahte bir yeniden başlatma saymıştı.

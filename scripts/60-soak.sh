@@ -2,7 +2,7 @@
 # 60-soak.sh - Yari-manuel dayaniklilik (soak) testleri.
 # Kullanim:
 #   60-soak.sh connect-cycles N          (elle: her adimda Enter)
-#   AUTO=1 60-soak.sh connect-cycles N   (Mac: scripts/mac-mirror.sh ile otomatik; HOLD_SEC=15)
+#   AUTO=1 60-soak.sh connect-cycles N   (Mac: scripts/mac-mirror.sh ile otomatik; HOLD_SEC=15 AUTO_GAP_SEC=5)
 #   60-soak.sh boot-cycles N
 #   60-soak.sh long <dakika>
 # Not: Bellek/kaynak sizintisi icin bu scripti 65-leak-watch.sh ile paralel
@@ -57,80 +57,117 @@ check_crash() {
 }
 
 # AUTO=1: Mac'te yansitmayi scripts/mac-mirror.sh ile otomatik baslat/durdur.
-# HOLD_SEC: her cevrimde yansitma acik kalma suresi.
+# HOLD_SEC: her cevrimde yansitma acik kalma suresi; AUTO_GAP_SEC: cevrimler
+# arasi bekleme (macOS'un cihazi yeniden kesfetmesi icin).
 AUTO="${AUTO:-0}"
 HOLD_SEC="${HOLD_SEC:-15}"
+AUTO_GAP_SEC="${AUTO_GAP_SEC:-5}"
 AIRPLAY_NAME="${AIRPLAY_NAME:-Salon TV}"
+MAC_LOG="$OUT/mac-mirror.log"
 
-# wait_layer present|absent SANIYE: katman gorunene / kaybolana kadar bekler.
+# wait_layer present|absent SANIYE: katman gorunene / kaybolana kadar bekler,
+# gecen saniyeyi yazar; sure dolarsa "-" yazar ve 1 doner.
 wait_layer() {
     local want="$1" t=0
     while [ "$t" -lt "$2" ]; do
         if [ -n "$(app_surfaceview_layer)" ]; then
-            [ "$want" = "present" ] && return 0
+            [ "$want" = "present" ] && { echo "$t"; return 0; }
         else
-            [ "$want" = "absent" ] && return 0
+            [ "$want" = "absent" ] && { echo "$t"; return 0; }
         fi
         sleep 1; t=$((t + 1))
     done
-    return 1
+    echo "-"; return 1
+}
+
+# mac_mirror start|stop: mac-mirror.sh'i calistirir, ciktiyi zaman damgasiyla
+# MAC_LOG'a yazar, cikis kodunu dondurur.
+mac_mirror() {
+    local out rc
+    out="$("$SCRIPT_DIR/mac-mirror.sh" "$1" "$AIRPLAY_NAME" 2>&1)"; rc=$?
+    printf '%s cevrim=%s %s rc=%s %s\n' "$(date '+%H:%M:%S')" "$i" "$1" "$rc" "$out" >> "$MAC_LOG"
+    [ "$rc" -eq 0 ] || log_warn "mac-mirror $1 hata verdi: $out"
+    return "$rc"
+}
+
+# Alicinin cevrim icindeki olaylari (logcat temizlenmez; cevrim basindaki
+# cihaz saatinden sonrasi okunur).
+dev_now() { adbs date '+%m-%d %H:%M:%S.000' | tr -d '\r'; }
+cycle_events() {
+    local log
+    log="$(adbs logcat -d -T "$1" 2>/dev/null)"
+    printf 'conn=%s disc=%s codec=%s' \
+        "$(printf '%s\n' "$log" | grep -c 'Client connected')" \
+        "$(printf '%s\n' "$log" | grep -c 'Client disconnected')" \
+        "$(printf '%s\n' "$log" | grep -c 'Video codec started')"
 }
 
 case "$MODE" in
     connect-cycles)
         N="${ARG:-1}"
-        echo "| # | ANR/FATAL yok | Surec canli | PSS(KB) | SurfaceView temiz | Sonuc |" >> "$SOAK_MD"
-        echo "|---|---|---|---|---|---|" >> "$SOAK_MD"
+        if [ "$AUTO" = "1" ]; then
+            echo "Mod: otomatik (mac-mirror.sh), HOLD_SEC=$HOLD_SEC AUTO_GAP_SEC=$AUTO_GAP_SEC" >> "$SOAK_MD"
+            echo >> "$SOAK_MD"
+        fi
+        echo "| # | Mac start | Katman (sn) | Mac stop | Kaybolma (sn) | Alici olaylari | ANR/FATAL yok | Surec canli | PSS(KB) | Sonuc |" >> "$SOAK_MD"
+        echo "|---|---|---|---|---|---|---|---|---|---|" >> "$SOAK_MD"
         i=1
         while [ "$i" -le "$N" ]; do
             printf '\n--- Cevrim %d/%d ---\n' "$i" "$N"
-            started="EVET"
+            t0="$(dev_now)"
+            start_st="elle"; stop_st="elle"
             if [ "$AUTO" = "1" ]; then
-                "$SCRIPT_DIR/mac-mirror.sh" start "$AIRPLAY_NAME" || log_warn "mac-mirror start hata verdi"
-                wait_layer present 25 || started="HAYIR"
+                mac_mirror start && start_st="OK" || start_st="HATA"
+                t_up="$(wait_layer present 25)"
             else
                 printf 'Iphone/Mac uzerinden mirroring BASLATIN, sonra Enter tusuna basin...\n'
                 read -r _
-                sleep 2
-                [ -n "$(app_surfaceview_layer)" ] || started="HAYIR"
+                t_up="$(wait_layer present 5)"
             fi
-            [ "$started" = "EVET" ] \
-                && log_ok "SurfaceView katmani goruldu (mirroring aktif gorunuyor)" \
+            [ "$t_up" != "-" ] \
+                && log_ok "SurfaceView katmani goruldu (${t_up} sn)" \
                 || log_warn "SurfaceView katmani bulunamadi (yine de devam ediliyor)"
 
             if [ "$AUTO" = "1" ]; then
                 sleep "$HOLD_SEC"
-                "$SCRIPT_DIR/mac-mirror.sh" stop "$AIRPLAY_NAME" || log_warn "mac-mirror stop hata verdi"
-                wait_layer absent 10 || true
-                sleep 2
+                mac_mirror stop && stop_st="OK" || stop_st="HATA"
+                t_down="$(wait_layer absent 10)"
             else
                 printf 'Simdi mirroring DURDURUN, sonra Enter tusuna basin...\n'
                 read -r _
-                sleep 3
+                t_down="$(wait_layer absent 10)"
             fi
+            sleep 2
+            events="$(cycle_events "$t0")"
 
             no_crash="EVET"; check_crash "cycle$i" || { no_crash="HAYIR"; CRASH_FOUND=1; }
-            proc_alive="EVET"; adbs pidof "$PKG" | grep -q '[0-9]' || proc_alive="HAYIR"
+            proc_alive="EVET"; [ -n "$(app_pid)" ] || proc_alive="HAYIR"
             pss="$(app_pss_kb)"
 
             layer_after="$(app_surfaceview_layer)"
-            focus_after="$(adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp' | safe_grep "$PKG" || true)"
-            # Uygulama TV'de on planda kaldigi icin odak her zaman bizde; odak
-            # bayat katman kaniti degil, yalnizca kayit icin tutulur. Bayat
-            # katman = yansitma bittikten sonra video SurfaceView'inin hala
-            # listede olmasi (idle preview kapaliyken).
-            printf '%s\t%s\t%s\n' "$i" "${layer_after:-}" "${focus_after:-}" >> "$OUT/after-stop.tsv"
-            surface_clean="EVET"
-            [ -n "$layer_after" ] && surface_clean="HAYIR"
+            printf '%s\t%s\t%s\n' "$i" "${layer_after:-}" "$events" >> "$OUT/after-stop.tsv"
 
+            # Siniflandirma: once gonderici (Mac/script) hatalari ayrilir; uygulama
+            # bulgusu yalnizca Mac tarafi basarili oldugunda sayilir.
             result="OK"
-            [ "$started" = "HAYIR" ] && result="FAIL(baslamadi)"
+            if [ "$start_st" = "HATA" ] && [ "$t_up" = "-" ]; then
+                result="MAC-START-FAIL"
+            elif [ "$t_up" = "-" ]; then
+                case "$events" in
+                    *"codec=0"*) result="FAIL(baslamadi)" ;;
+                    *) result="FAIL(katman-yok)" ;;
+                esac
+            elif [ "$stop_st" = "HATA" ] && [ -n "$layer_after" ]; then
+                result="MAC-STOP-FAIL"
+            elif [ -n "$layer_after" ]; then
+                result="UYARI(stale-layer)"
+            fi
             [ "$no_crash" = "HAYIR" ] && result="FAIL(crash)"
             [ "$proc_alive" = "HAYIR" ] && result="FAIL(surec)"
-            [ "$surface_clean" = "HAYIR" ] && [ "$result" = "OK" ] && result="UYARI(stale-layer)"
 
-            echo "| $i | $no_crash | $proc_alive | ${pss:-NA} | $surface_clean | $result |" >> "$SOAK_MD"
+            echo "| $i | $start_st | $t_up | $stop_st | $t_down | $events | $no_crash | $proc_alive | ${pss:-NA} | $result |" >> "$SOAK_MD"
             i=$((i + 1))
+            [ "$AUTO" = "1" ] && sleep "$AUTO_GAP_SEC"
         done
         ;;
 
