@@ -179,7 +179,7 @@ cat "$OUT/logcat-before.txt" >> "$OUT/logcat-full.txt"
 safe_grep -iE 'DecoderSelector|MediaCodec|low-latency|vdec' "$OUT/logcat-full.txt" | tail -n 200 > "$OUT/decoder-selection.log"
 # HEVC/AVC secimiyle ilgili satirlar; TvMirrorStats'in saniyelik durum satirlari haric.
 safe_grep -viE 'TvMirrorStats' "$OUT/logcat-full.txt" \
-    | safe_grep -iE 'decoders: avc=|hevc decoder not whitelisted|Video codec started|output switched|Direct output failed|setOutputSurface|H\.265|h265|hevc' \
+    | safe_grep -iE 'decoders: avc=|hevc decoder not whitelisted|Video codec started|output switched|experiments:|Direct output failed|setOutputSurface|H\.265|h265|hevc' \
     | tail -n 20 > "$OUT/hevc-selection.log"
 
 # --- Ozet hesaplamalari ---
