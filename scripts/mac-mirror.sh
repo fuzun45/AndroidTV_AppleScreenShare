@@ -84,6 +84,55 @@ on closePanel()
 	tell application "System Events" to key code 53 -- Esc
 end closePanel
 
+-- Paneli acar ve cihazin durumunu dondurur: {"off", kutu} ya da {"on", ucgen}.
+-- macOS 15: bagli degilken cihaz AXCheckBox (value 0); yansitilirken ayni
+-- AXIdentifier ile AXDisclosureTriangle + "Su An Yansitiliyor" metni gorunur.
+-- Ogeler probe ile ayni yoldan (process > window > entire contents, indeksle)
+-- okunur. Birden fazla cihazda TV adi baslik/yardim metninde aranir.
+on deviceState(tv)
+	my openMirroringPanel()
+	set boxes to {}
+	set tris to {}
+	set named to missing value
+	tell application "System Events" to tell application process "ControlCenter"
+		repeat with wi from 1 to (count of windows)
+			set items_ to entire contents of window wi
+			repeat with k from 1 to (count of items_)
+				set el to item k of items_
+				set r to ""
+				try
+					set r to (role of el) as text
+				end try
+				if r is "AXCheckBox" or r is "AXDisclosureTriangle" then
+					set t to my descOf(el)
+					if t contains "screen-mirroring-device-" then
+						if r is "AXCheckBox" then
+							set end of boxes to el
+						else
+							set end of tris to el
+						end if
+						try
+							set t to t & " | " & ((value of attribute "AXTitle" of el) as text)
+						end try
+						try
+							set t to t & " | " & ((help of el) as text)
+						end try
+						if t contains tv then set named to {r, el}
+					end if
+				end if
+			end repeat
+		end repeat
+	end tell
+	if named is not missing value then
+		if (item 1 of named) is "AXDisclosureTriangle" then return {"on", item 2 of named}
+		return {"off", item 2 of named}
+	end if
+	if (count of tris) is 1 and (count of boxes) is 0 then return {"on", item 1 of tris}
+	if (count of boxes) is 1 and (count of tris) is 0 then return {"off", item 1 of boxes}
+	my closePanel()
+	error "'" & tv & "' secilemedi: " & (count of boxes) & " kapali + " & (count of tris) & " acik cihaz (probe ciktisini gonderin)"
+end deviceState
+
 on run argv
 	set act to item 1 of argv
 	set tv to item 2 of argv
@@ -125,55 +174,30 @@ on run argv
 		return out
 	end if
 
-	my openMirroringPanel()
-	-- Cihaz kutulari: AXIdentifier "screen-mirroring-device-<id>". Ad kutunun
-	-- kendisinde olmayabilir, bu yuzden once baslik/yardim metninde TV adi
-	-- aranir; listede tek cihaz varsa o secilir. Ogeler probe ile ayni yoldan
-	-- (process > window > entire contents, indeksle) okunur.
-	set target to missing value
-	set firstDev to missing value
-	set nDev to 0
-	set nBox to 0
-	tell application "System Events" to tell application process "ControlCenter"
-		repeat with wi from 1 to (count of windows)
-			set items_ to entire contents of window wi
-			repeat with k from 1 to (count of items_)
-				set el to item k of items_
-				set r to ""
-				try
-					set r to (role of el) as text
-				end try
-				if r is "AXCheckBox" then
-					set nBox to nBox + 1
-					set t to my descOf(el)
-					if t contains "screen-mirroring-device-" then
-						set nDev to nDev + 1
-						if firstDev is missing value then set firstDev to el
-						try
-							set t to t & " | " & ((value of attribute "AXTitle" of el) as text)
-						end try
-						try
-							set t to t & " | " & ((help of el) as text)
-						end try
-						if t contains tv then set target to el
-					end if
-				end if
-			end repeat
-		end repeat
-		if target is missing value and nDev is 1 then set target to firstDev
-		if target is missing value then
+	set st to my deviceState(tv)
+	if act is "start" then
+		if (item 1 of st) is "on" then
 			my closePanel()
-			error "'" & tv & "' secilemedi: " & nDev & " cihaz / " & nBox & " kutu bulundu (probe ciktisini gonderin)"
+			return "start: zaten yansitiliyor (" & tv & ")"
 		end if
-		set cur to 0
-		try
-			set cur to (value of target) as integer
-		end try
-		if act is "start" and cur is 0 then click target
-		if act is "stop" and cur is 1 then click target
-	end tell
+		tell application "System Events" to click (item 2 of st)
+		delay 0.5
+		my closePanel()
+		return "start tamam (" & tv & ")"
+	end if
+	-- stop
+	if (item 1 of st) is "off" then
+		my closePanel()
+		return "stop: zaten yansitma yok (" & tv & ")"
+	end if
+	tell application "System Events" to click (item 2 of st)
 	delay 0.5
 	my closePanel()
-	return act & " tamam (" & tv & ")"
+	-- dogrula: panel yeniden acilip durum okunur
+	delay 2
+	set st2 to my deviceState(tv)
+	my closePanel()
+	if (item 1 of st2) is "on" then error "stop dogrulanamadi: tiklamadan sonra hala yansitiliyor (probe ciktisini gonderin)"
+	return "stop tamam (" & tv & ")"
 end run
 APPLESCRIPT
