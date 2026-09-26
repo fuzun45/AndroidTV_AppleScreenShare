@@ -126,19 +126,36 @@ on run argv
 	end if
 
 	set w to my openMirroringPanel()
+	-- Cihaz kutulari: AXIdentifier "screen-mirroring-device-<id>". Ad kutunun
+	-- kendisinde olmayabilir (macOS 15), bu yuzden once baslik/yardim metninde
+	-- TV adi aranir; listede tek cihaz varsa o secilir.
 	set target to missing value
+	set devices to {}
 	tell application "System Events"
 		repeat with el in (entire contents of w)
 			try
-				if ((role of el) as text) is "AXCheckBox" and (my descOf(el)) contains tv then
-					set target to el
-					exit repeat
+				if ((role of el) as text) is "AXCheckBox" and (my descOf(el)) contains "screen-mirroring-device-" then
+					set end of devices to (contents of el)
 				end if
 			end try
 		end repeat
+		repeat with el in devices
+			set t to my descOf(el)
+			try
+				set t to t & " | " & ((value of attribute "AXTitle" of el) as text)
+			end try
+			try
+				set t to t & " | " & ((help of el) as text)
+			end try
+			if t contains tv then
+				set target to (contents of el)
+				exit repeat
+			end if
+		end repeat
+		if target is missing value and (count of devices) is 1 then set target to item 1 of devices
 		if target is missing value then
 			my closePanel()
-			error "'" & tv & "' listede yok (TV acik ve ayni agda mi? probe ciktisini gonderin)"
+			error "'" & tv & "' secilemedi: listede " & (count of devices) & " cihaz var (TV acik mi? coklu cihazda probe ciktisini gonderin)"
 		end if
 		set cur to 0
 		try
