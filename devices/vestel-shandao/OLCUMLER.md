@@ -155,3 +155,22 @@ Yorum:
 
 - **Alıcının yaşam döngüsü: PASS.**
 - **Bellek, açık soru:** PSS 23 örnek boyunca 41–44 MB. ~18:02'de tek seferde +6 MB çıktı (49.9 MB, native 7.7 → 9.5 MB) ve boşta 47.5 MB'da kaldı. M11'de aynı yükte böyle bir basamak yoktu. Daha uzun bir turla (40 çevrim, 50 dk) tek seferlik mi, tekrarlayan mı olduğu ayırt edilecek.
+
+## M13: uçtan uca gecikme (hamtv.com/latencytest, 1cb029b, 1080p/30), 2026-09-26 ~18:10
+
+Mac ekranı ve TV aynı fotoğraf karesinde (sayaçta saniye ve salise hanesi):
+
+| foto | Mac | TV | gecikme |
+|---|---|---|---|
+| 1 | 03.22 | 03.13 | 90 ms |
+| 2 | 00.61 | 00.56 | 50 ms |
+| 3 | 57.01 | 56.92 | 90 ms |
+
+- **Gecikme ~50–90 ms.** Hedef < 300 ms'nin çok altında. Doğrudan çıkış yolundaki 4–5 sn'lik regresyon (M5, M7) giderildi.
+- Ekran tazeleme ve kamera pozlaması nedeniyle ölçüm hassasiyeti ±1 kare (~17–40 ms).
+
+## Bulgu: TV açılışından sonra yansıtma görüntüsü ekrana gelmiyor
+
+- **Belirti:** sunucu açılışta arka planda başlıyor ve Mac'te görünüyor. Bağlanınca görüntü, uygulama elle açılana kadar gelmiyor.
+- **Neden:** "Bağlanınca uygulamayı aç" (varsayılan açık) arka plandan activity başlatmak için Android 10+ `SYSTEM_ALERT_WINDOW` izni istiyor. İzin her kaldır-kur işleminde sıfırlanıyor ve TV'de ayar ekranı yok.
+- **Çözüm:** `30-install.sh` izni adb ile veriyor, `40-verify.sh` izni kontrol ediyor. Uygulama kodu değişmedi.

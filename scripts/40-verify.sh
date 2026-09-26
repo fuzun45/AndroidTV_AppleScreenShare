@@ -68,6 +68,15 @@ check_mdns() {
 check_mdns "_airplay._tcp"
 check_mdns "_raop._tcp"
 
+# 4b) Baglaninca ekrana gelme izni (SYSTEM_ALERT_WINDOW). Yoksa TV acilisinda
+# arka planda baslayan sunucu baglanti alir ama goruntu uygulama acilana kadar
+# ekrana gelmez.
+if adbs appops get "$PKG" SYSTEM_ALERT_WINDOW | grep -q 'allow'; then
+    pass "Baglaninca ekrana gelme izni (SYSTEM_ALERT_WINDOW) var"
+else
+    fail "SYSTEM_ALERT_WINDOW izni yok: adb shell appops set $PKG SYSTEM_ALERT_WINDOW allow"
+fi
+
 # 5) Idle iken wakelock tutuluyor mu (bilgi amacli, PASS/FAIL degil - not olarak yazdir)
 adbs dumpsys power > "$OUT/dumpsys-power.txt"
 wl="$(safe_grep -i "$PKG" "$OUT/dumpsys-power.txt")"

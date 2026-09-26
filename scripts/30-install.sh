@@ -92,6 +92,14 @@ elif ! echo "$install_out" | grep -qi 'Success'; then
     die "Kurulum basarisiz oldu, yukaridaki ciktiya bakin."
 fi
 
+# "Baglaninca uygulamayi ac" (varsayilan acik) Android 10+'da arka plandan
+# ekrana gelmek icin "Diger uygulamalarin uzerinde goster" iznine ihtiyac duyar.
+# Izin her kaldir-kur'da sifirlanir ve TV'lerde ayar ekrani cogu zaman yoktur;
+# bu yuzden yalnizca bu uygulama icin adb ile verilir. Geri almak:
+#   adb shell appops set <pkg> SYSTEM_ALERT_WINDOW default
+adbs appops set "$PKG" SYSTEM_ALERT_WINDOW allow
+log_ok "Ekrana otomatik gelme izni verildi: $(adbs appops get "$PKG" SYSTEM_ALERT_WINDOW | tr -d '\r')"
+
 log_ok "Kurulum tamamlandi. Uygulama baslatiliyor: $PKG/$MAIN_ACTIVITY_CLASS"
 adbs am start -n "$PKG/$MAIN_ACTIVITY_CLASS"
 
