@@ -26,3 +26,17 @@ Yorum:
 - Netflix: Apple, DRM'li içeriği HDCP sertifikası olmayan AirPlay alıcılarına göndermiyor. Alıcı tarafında çözümü yok.
 
 ¹ Ölçüm aracı alıcının SurfaceView katmanını adıyla bulamadı; seçici düzeltiliyor.
+
+## M2: upstream GL hattı, Mac, AUTO, 2026-09-26 13:28 (120 sn)
+
+| req | recv | codec / decoder | in_fps | dec_fps | presented | video Comp Type | missed Δ |
+|---|---|---|---|---|---|---|---|
+| 3840x2160@60 | 3840x2160 | H.264 / `OMX.MS.AVC.Decoder` | 43 | 43 | NA² | **CLIENT** | 0 |
+
+- Seçilen katman: `SurfaceView[io.github.fuzun45.tvmirror/io.github.jqssun.airplay.MainActivity](BLAST)#55162`
+- Uygulamanın ana penceresi de CLIENT.
+- CPU medyanı %32.5; PSS 62–69 MB; swap-out 0.
+
+**Karar (plan adım 6):** Video katmanı GPU kompozisyonunda. Hue projesinde bu TV'de videoyu çökerten mekanizmanın aynısı. Codec çıkışı doğrudan SurfaceView'a verilecek (`perf(receiver)` commit'i) ve aynı ölçüm tekrarlanacak.
+
+² `jank.py` katman adını adb shell'e tırnaksız verdiği için `--latency` veri döndürmedi; düzeltildi.
