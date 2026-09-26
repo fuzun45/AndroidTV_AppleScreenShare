@@ -91,8 +91,8 @@ end closePanel
 -- okunur. Birden fazla cihazda TV adi baslik/yardim metninde aranir.
 on deviceState(tv)
 	my openMirroringPanel()
-	set boxes to {}
-	set tris to {}
+	set devBoxes to {}
+	set devTris to {}
 	set matchedDev to missing value
 	tell application "System Events" to tell application process "ControlCenter"
 		repeat with wi from 1 to (count of windows)
@@ -107,9 +107,9 @@ on deviceState(tv)
 					set t to my descOf(el)
 					if t contains "screen-mirroring-device-" then
 						if r is "AXCheckBox" then
-							set end of boxes to el
+							set end of devBoxes to el
 						else
-							set end of tris to el
+							set end of devTris to el
 						end if
 						try
 							set t to t & " | " & ((value of attribute "AXTitle" of el) as text)
@@ -127,10 +127,10 @@ on deviceState(tv)
 		if (item 1 of matchedDev) is "AXDisclosureTriangle" then return {"on", item 2 of matchedDev}
 		return {"off", item 2 of matchedDev}
 	end if
-	if (count of tris) is 1 and (count of boxes) is 0 then return {"on", item 1 of tris}
-	if (count of boxes) is 1 and (count of tris) is 0 then return {"off", item 1 of boxes}
+	if (count of devTris) is 1 and (count of devBoxes) is 0 then return {"on", item 1 of devTris}
+	if (count of devBoxes) is 1 and (count of devTris) is 0 then return {"off", item 1 of devBoxes}
 	my closePanel()
-	error "'" & tv & "' secilemedi: " & (count of boxes) & " kapali + " & (count of tris) & " acik cihaz (probe ciktisini gonderin)"
+	error "'" & tv & "' secilemedi: " & (count of devBoxes) & " kapali + " & (count of devTris) & " acik cihaz (probe ciktisini gonderin)"
 end deviceState
 
 on run argv
@@ -174,30 +174,30 @@ on run argv
 		return out
 	end if
 
-	set st to my deviceState(tv)
+	set devState to my deviceState(tv)
 	if act is "start" then
-		if (item 1 of st) is "on" then
+		if (item 1 of devState) is "on" then
 			my closePanel()
 			return "start: zaten yansitiliyor (" & tv & ")"
 		end if
-		tell application "System Events" to click (item 2 of st)
+		tell application "System Events" to click (item 2 of devState)
 		delay 0.5
 		my closePanel()
 		return "start tamam (" & tv & ")"
 	end if
 	-- stop
-	if (item 1 of st) is "off" then
+	if (item 1 of devState) is "off" then
 		my closePanel()
 		return "stop: zaten yansitma yok (" & tv & ")"
 	end if
-	tell application "System Events" to click (item 2 of st)
+	tell application "System Events" to click (item 2 of devState)
 	delay 0.5
 	my closePanel()
 	-- dogrula: panel yeniden acilip durum okunur
 	delay 2
-	set st2 to my deviceState(tv)
+	set devState2 to my deviceState(tv)
 	my closePanel()
-	if (item 1 of st2) is "on" then error "stop dogrulanamadi: tiklamadan sonra hala yansitiliyor (probe ciktisini gonderin)"
+	if (item 1 of devState2) is "on" then error "stop dogrulanamadi: tiklamadan sonra hala yansitiliyor (probe ciktisini gonderin)"
 	return "stop tamam (" & tv & ")"
 end run
 APPLESCRIPT
