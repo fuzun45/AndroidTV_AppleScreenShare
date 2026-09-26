@@ -142,3 +142,16 @@ Yorum:
   - LMK sayımı artık yalnızca bizim sürecimizin öldürülmesini sayıyor.
 - Soak "alıcı olayları" hep 0 çıktı, bu da bir araç hatasıydı: `logcat -T "MM-DD hh:mm:ss"` adb'de bölünüyor. Epoch biçimine geçildi.
 - Mac arayüzündeki yansıtma durumu güvenilmez: aynı durum value 0/1 ya da üçgen olarak görünebiliyor. Soak artık gerçek durumu TV'den okuyor (video katmanı ve alıcı logu). Mac'e yalnızca tıklanıyor.
+
+## M12: otomatik bağlan/kopar ×20 (alıcı olaylarıyla), 1cb029b, 2026-09-26 17:50–18:04
+
+| | sonuç |
+|---|---|
+| Mac'e tıklanan bağlanmalar | 15/15 `conn=1 codec=1`, katman 5–6 sn'de |
+| Alıcının kopmayı gördüğü durdurmalar | 15/15 `disc=1`, katman **0 sn**'de kalktı |
+| Bayat katman (kopma sonrası) | 0 |
+| Crash / ANR | 0 |
+| MAC-STOP-FAIL | 5: Mac iki tıkı da yok saydı, alıcı kopma görmedi. Bir sonraki tıkta bıraktı. |
+
+- **Alıcının yaşam döngüsü: PASS.**
+- **Bellek, açık soru:** PSS 23 örnek boyunca 41–44 MB. ~18:02'de tek seferde +6 MB çıktı (49.9 MB, native 7.7 → 9.5 MB) ve boşta 47.5 MB'da kaldı. M11'de aynı yükte böyle bir basamak yoktu. Daha uzun bir turla (40 çevrim, 50 dk) tek seferlik mi, tekrarlayan mı olduğu ayırt edilecek.

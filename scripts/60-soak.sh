@@ -147,15 +147,18 @@ case "$MODE" in
                 t1="$(dev_now)"
                 mac_mirror click; stop_st="tik"
                 t_down="$(wait_layer absent 10)"
-                if [ "$t_down" = "-" ]; then
-                    # Alici kopmayi gormediyse Mac birakmamistir: bir kez daha tikla.
-                    # Gorduyse ikinci tik yansitmayi yeniden baslatir; tiklanmaz.
-                    if [ "$(ev_get "$(cycle_events "$t1")" disc)" = "0" ]; then
-                        log_warn "Alici kopma gormedi, Mac'e bir kez daha tiklaniyor"
-                        mac_mirror click; stop_st="tik x2"
-                        t_down="$(wait_layer absent 10)"
-                    fi
-                fi
+                # Alici kopmayi gormediyse Mac birakmamistir (Mac baglandiktan sonra
+                # bir sure tiklamayi yok sayabiliyor): 8 sn arayla en fazla 3 tik.
+                # Alici kopmayi gorduyse yeniden tiklanmaz (yansitmayi baslatirdi).
+                clicks=1
+                while [ "$t_down" = "-" ] && [ "$clicks" -lt 3 ] \
+                      && [ "$(ev_get "$(cycle_events "$t1")" disc)" = "0" ]; do
+                    sleep 8
+                    clicks=$((clicks + 1))
+                    log_warn "Alici kopma gormedi, Mac'e yeniden tiklaniyor ($clicks/3)"
+                    mac_mirror click; stop_st="tik x$clicks"
+                    t_down="$(wait_layer absent 10)"
+                done
             else
                 printf 'Simdi mirroring DURDURUN, sonra Enter tusuna basin...\n'
                 read -r _
