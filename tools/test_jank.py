@@ -114,6 +114,70 @@ class TestDedupBehavior(unittest.TestCase):
         self.assertEqual(ordered, [2000, 3000])
 
 
+class TestCadenceAwareJank(unittest.TestCase):
+    """60 Hz ekranda 25 fps icerik, degisen 2/3 vsync (33.3/50 ms) araliklarla
+    sunulur; bu duz medyan-tabanli kurala gore janky sayilir ama aslinda
+    puruzsuzdur. --expected-fps ile cadence-aware hesap bunu ayirt etmeli."""
+
+    REFRESH_NS = 16_666_667  # 60 Hz
+
+    def _pulldown_2_3_times(self, n_frames):
+        # 25fps@60Hz: 60/25=2.4 vsync/kare; 5'lik dongude 2,2,3,2,3 (ortalama 2.4)
+        # seklinde degisen (yalnizca 2 veya 3 vsync'lik) araliklarla sunulur.
+        times = [0]
+        pattern = [2, 2, 3, 2, 3]
+        for i in range(n_frames - 1):
+            vsyncs = pattern[i % len(pattern)]
+            times.append(times[-1] + vsyncs * self.REFRESH_NS)
+        return times
+
+    def test_25fps_pulldown_zero_cadence_jank(self):
+        times = self._pulldown_2_3_times(60)
+        stats = jank.compute_stats(self.REFRESH_NS, times, expected_fps=25.0)
+        self.assertAlmostEqual(stats["fps"], 25.0, delta=0.5)
+        self.assertIsNotNone(stats["janky_pct_cadence"])
+        self.assertEqual(stats["janky_pct_cadence"], 0.0)
+        # eski (medyan tabanli) kural aynen korunuyor ve bu senaryoda >0 olabilir
+        self.assertIsNotNone(stats["janky_pct"])
+
+    def test_25fps_pulldown_with_real_gaps_has_cadence_jank(self):
+        times = self._pulldown_2_3_times(60)
+        # birkac gercek 4-vsync bosluk (gercek takilma) ekle
+        for idx in (10, 25, 40):
+            for j in range(idx, len(times)):
+                times[j] += self.REFRESH_NS  # o noktadan sonrasini bir vsync geciktir
+        stats = jank.compute_stats(self.REFRESH_NS, times, expected_fps=25.0)
+        self.assertGreater(stats["janky_pct_cadence"], 0.0)
+
+    def test_60fps_steady_zero_cadence_jank(self):
+        times = [i * self.REFRESH_NS for i in range(60)]
+        stats = jank.compute_stats(self.REFRESH_NS, times, expected_fps=60.0)
+        self.assertAlmostEqual(stats["fps"], 60.0, delta=0.5)
+        self.assertEqual(stats["janky_pct_cadence"], 0.0)
+        self.assertAlmostEqual(stats["dropped_vs_expected_pct"], 0.0, places=3)
+
+    def test_cadence_limit_ms_formula(self):
+        limit, refresh_ms, expected_ms = jank.cadence_limit_ms(25.0, self.REFRESH_NS)
+        self.assertAlmostEqual(refresh_ms, 1000.0 / 60.0, places=3)
+        self.assertAlmostEqual(expected_ms, 40.0, places=3)
+        # ceil(40/16.667)=3 -> 3*16.667 + 0.5*16.667 = 58.33 ms
+        self.assertAlmostEqual(limit, 3 * refresh_ms + 0.5 * refresh_ms, places=3)
+
+    def test_dropped_vs_expected_pct(self):
+        # 30 fps sunulan ama beklenen 60 fps -> ~%50 eksik
+        times = [i * (self.REFRESH_NS * 2) for i in range(30)]
+        stats = jank.compute_stats(self.REFRESH_NS, times, expected_fps=60.0)
+        self.assertAlmostEqual(stats["dropped_vs_expected_pct"], 50.0, delta=1.0)
+
+    def test_no_expected_fps_keeps_cadence_fields_none(self):
+        times = [i * self.REFRESH_NS for i in range(10)]
+        stats = jank.compute_stats(self.REFRESH_NS, times)
+        self.assertIsNone(stats["janky_pct_cadence"])
+        self.assertIsNone(stats["cadence_limit_ms"])
+        self.assertIsNone(stats["dropped_vs_expected_pct"])
+        self.assertIsNone(stats["expected_fps"])
+
+
 class TestLayerAutodetectRegex(unittest.TestCase):
     def test_legacy_regex_still_matches_expected_layer_names(self):
         # DEFAULT_LAYER_REGEX artik yalnizca --layer-regex acikca verildiginde

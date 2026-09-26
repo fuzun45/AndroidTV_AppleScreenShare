@@ -94,6 +94,82 @@ adbs dumpsys SurfaceFlinger > "$OUT/sf-after.txt"
 safe_grep -i 'missed' "$OUT/sf-after.txt" > "$OUT/missed-after.txt"
 python3 "$REPO_ROOT/tools/hwc_layers.py" < "$OUT/sf-after.txt" > "$OUT/complayers-after.txt" 2>/dev/null || true
 
+log_info "Video katmani tampon (buffer) detaylari cikariliyor..."
+export VIDEO_LAYER
+python3 -c '
+import os, re, sys
+
+video = os.environ.get("VIDEO_LAYER", "").strip()
+path = sys.argv[1]
+details_out = sys.argv[2]
+format_out = sys.argv[3]
+
+FIELD_RE = re.compile(r"format|dataspace|usage|buffer|composition|crop|frame|transform", re.IGNORECASE)
+
+lines = []
+if video:
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        lines = []
+
+result = []
+seen = set()
+if video:
+    for i, ln in enumerate(lines):
+        if video not in ln:
+            continue
+        # eslesen katman satirindan sonraki (en fazla) 25 satira bak
+        for j in range(i + 1, min(i + 1 + 25, len(lines))):
+            cand = lines[j].rstrip("\n")
+            if not FIELD_RE.search(cand):
+                continue
+            if cand in seen:
+                continue
+            seen.add(cand)
+            result.append(cand)
+            if len(result) >= 40:
+                break
+        if len(result) >= 40:
+            break
+
+with open(details_out, "w", encoding="utf-8") as f:
+    for ln in result[:40]:
+        f.write(ln + "\n")
+
+# Android 14 dökümünde piksel formatı yazmıyor; dataspace ayırt edici:
+# GL ile çizilen RGBA tampon V0_SRGB (0x8810000), codec YUV çıkışı video dataspace degeri
+# taşıyor (ör. 0x8c10000 = BT709/SMPTE170M/FULL). Bitler: standard 16-21, transfer 22-26,
+# range 27-29 (1=FULL, 2=LIMITED).
+def _dataspaces(rows):
+    out = []
+    for ln in rows:
+        for m in re.finditer(r"dataspace=(\S+)(?: \((\d+)\))?", ln):
+            name, num = m.group(1), m.group(2)
+            try:
+                val = int(num) if num else int(name, 16)
+            except ValueError:
+                val = None
+            out.append((name, val))
+    return out
+
+verdict = "Tampon bicimi belirlenemedi"
+for name, val in _dataspaces(result):
+    if val in (None, 0):
+        continue
+    if "SRGB" in name.upper() or val == 0x8810000:
+        verdict = "Tampon: RGBA (GL cizimi), dataspace %s" % name
+        break
+    transfer = (val >> 22) & 0x1F
+    rng = {1: "FULL", 2: "LIMITED", 3: "EXTENDED"}.get((val >> 27) & 0x7, "?")
+    if transfer in (3, 7):  # SMPTE_170M / HLG vb. video transferleri
+        verdict = "Tampon: YUV (codec dogrudan), dataspace %s, range %s" % (name, rng)
+        break
+with open(format_out, "w", encoding="utf-8") as f:
+    f.write(verdict + "\n")
+' "$OUT/sf-after.txt" "$OUT/video-layer-details.txt" "$OUT/video-layer-format.txt" 2>/dev/null || true
+
 log_info "TvMirrorStats logcat kaydediliyor..."
 adbs logcat -d -s TvMirrorStats:* > "$OUT/tvmirrorstats.log"
 
@@ -103,7 +179,7 @@ cat "$OUT/logcat-before.txt" >> "$OUT/logcat-full.txt"
 safe_grep -iE 'DecoderSelector|MediaCodec|low-latency|vdec' "$OUT/logcat-full.txt" | tail -n 200 > "$OUT/decoder-selection.log"
 # HEVC/AVC secimiyle ilgili satirlar; TvMirrorStats'in saniyelik durum satirlari haric.
 safe_grep -viE 'TvMirrorStats' "$OUT/logcat-full.txt" \
-    | safe_grep -iE 'decoders: avc=|hevc decoder not whitelisted|Video codec started|Direct output failed|setOutputSurface|H\.265|h265|hevc' \
+    | safe_grep -iE 'decoders: avc=|hevc decoder not whitelisted|Video codec started|output switched|Direct output failed|setOutputSurface|H\.265|h265|hevc' \
     | tail -n 20 > "$OUT/hevc-selection.log"
 
 # --- Ozet hesaplamalari ---
@@ -129,9 +205,30 @@ dropped_last="$(safe_grep -o 'dropped=[0-9]*' "$OUT/tvmirrorstats.log" | tail -n
 
 presented_fps="NA"
 janky_pct="NA"
+janky_pct_cadence="NA"
+cadence_expected_fps="NA"
+cadence_limit_ms="NA"
+dropped_vs_expected_pct="NA"
+JANK_CADENCE_JSON="$OUT/jank-cadence.json"
 if [ -f "$JANK_JSON" ]; then
-    presented_fps="$(python3 -c "import json,sys; d=json.load(open('$JANK_JSON')); print(d.get('fps') if d.get('fps') is not None else 'NA')" 2>/dev/null || echo NA)"
-    janky_pct="$(python3 -c "import json,sys; d=json.load(open('$JANK_JSON')); print(d.get('janky_pct') if d.get('janky_pct') is not None else 'NA')" 2>/dev/null || echo NA)"
+    presented_fps="$(python3 -c "import json; d=json.load(open('$JANK_JSON')); v=d.get('fps'); print('%.1f' % v if v is not None else 'NA')" 2>/dev/null || echo NA)"
+    janky_pct="$(python3 -c "import json; d=json.load(open('$JANK_JSON')); v=d.get('janky_pct'); print('%.2f' % v if v is not None else 'NA')" 2>/dev/null || echo NA)"
+
+    # in_fps medyani (icerik temposu) yalnizca capture bittikten SONRA biliniyor;
+    # bu yuzden cadence-aware jank'i burada, jank.py'nin --from-json modu ile
+    # kaydedilmis ham zaman damgalarindan (adb'ye tekrar gitmeden) hesapliyoruz.
+    case "$in_fps_med" in
+        ''|NA) : ;;
+        *)
+            if python3 "$REPO_ROOT/tools/jank.py" --from-json "$JANK_JSON" --expected-fps "$in_fps_med" \
+                --json "$JANK_CADENCE_JSON" > "$OUT/jank-cadence-stdout.txt" 2>&1; then
+                janky_pct_cadence="$(python3 -c "import json; d=json.load(open('$JANK_CADENCE_JSON')); v=d.get('janky_pct_cadence'); print('%.2f' % v if v is not None else 'NA')" 2>/dev/null || echo NA)"
+                cadence_expected_fps="$(python3 -c "import json; d=json.load(open('$JANK_CADENCE_JSON')); v=d.get('expected_fps'); print('%.1f' % v if v is not None else 'NA')" 2>/dev/null || echo NA)"
+                cadence_limit_ms="$(python3 -c "import json; d=json.load(open('$JANK_CADENCE_JSON')); v=d.get('cadence_limit_ms'); print('%.2f' % v if v is not None else 'NA')" 2>/dev/null || echo NA)"
+                dropped_vs_expected_pct="$(python3 -c "import json; d=json.load(open('$JANK_CADENCE_JSON')); v=d.get('dropped_vs_expected_pct'); print('%.2f' % v if v is not None else 'NA')" 2>/dev/null || echo NA)"
+            fi
+            ;;
+    esac
 fi
 
 # complayers-*.txt: "<TIP>\t<katman adi>" (tools/hwc_layers.py). hwc_layers.py'nin
@@ -240,7 +337,24 @@ SUMMARY="$OUT/SUMMARY.md"
     echo
     echo "## Takilma (Jank)"
     echo
-    echo "- Janky yuzde: ${janky_pct}%"
+    echo "- Ham jank (medyan tabanli): ${janky_pct}%"
+    if [ "$janky_pct_cadence" != "NA" ]; then
+        echo "- Icerik temposuna gore jank: ${janky_pct_cadence}% (beklenen ${cadence_expected_fps} fps, sinir ${cadence_limit_ms} ms)"
+        echo "- Beklenene gore eksik kare: ${dropped_vs_expected_pct}%"
+    else
+        echo "- Icerik temposuna gore jank: hesaplanamadi (in_fps medyani bulunamadi)"
+    fi
+    echo
+    echo "## Video katmani ayrintilari (tampon bicimi)"
+    echo
+    if [ -n "$VIDEO_LAYER" ] && [ -s "$OUT/video-layer-details.txt" ]; then
+        echo "- $(cat "$OUT/video-layer-format.txt" 2>/dev/null || echo "Tampon bicimi belirlenemedi")"
+        echo '```'
+        cat "$OUT/video-layer-details.txt"
+        echo '```'
+    else
+        echo "- Video katmani detaylari bulunamadi."
+    fi
     echo
     echo "## HWC Katman Durumu"
     echo

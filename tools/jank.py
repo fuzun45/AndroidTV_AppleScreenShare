@@ -17,6 +17,7 @@ Kullanim:
 """
 import argparse
 import json
+import math
 import os
 import re
 import shlex
@@ -167,7 +168,24 @@ def collect(adb, device, layer, seconds, interval):
     return refresh_period, all_actual, layer_disappeared
 
 
-def compute_stats(refresh_period, actual_times):
+DEFAULT_REFRESH_MS = 1000.0 / 60.0  # geri dusme: 16.667 ms (60 Hz)
+
+
+def cadence_limit_ms(expected_fps, refresh_period_ns):
+    """25 fps gibi icerikler 60 Hz ekranda degisen (orn. 2/3 vsync) araliklarla
+    sunulur; bu, ekranin destekleyebildigi en buyuk "temposal-uygun" vsync
+    katinin ustune yarim vsync toleransi eklenerek janksiz kabul edilir.
+
+    Donen: (limit_ms, refresh_ms, expected_ms)
+    """
+    refresh_ms = (refresh_period_ns / 1e6) if refresh_period_ns else DEFAULT_REFRESH_MS
+    expected_ms = 1000.0 / expected_fps
+    vsync_mult = math.ceil(expected_ms / refresh_ms)
+    limit_ms = vsync_mult * refresh_ms + 0.5 * refresh_ms
+    return limit_ms, refresh_ms, expected_ms
+
+
+def compute_stats(refresh_period, actual_times, expected_fps=None):
     n = len(actual_times)
     if n < 2:
         return {
@@ -180,6 +198,10 @@ def compute_stats(refresh_period, actual_times):
             "max_ms": None,
             "janky_count": None,
             "janky_pct": None,
+            "janky_pct_cadence": None,
+            "expected_fps": expected_fps,
+            "cadence_limit_ms": None,
+            "dropped_vs_expected_pct": None,
         }
 
     span_ns = actual_times[-1] - actual_times[0]
@@ -200,6 +222,18 @@ def compute_stats(refresh_period, actual_times):
         janky_count = sum(1 for iv in intervals_ms if iv > janky_threshold)
     janky_pct = (janky_count / len(intervals_ms) * 100.0) if intervals_ms else None
 
+    janky_pct_cadence = None
+    limit_ms = None
+    dropped_vs_expected_pct = None
+    if expected_fps:
+        limit_ms, _refresh_ms, _expected_ms = cadence_limit_ms(expected_fps, refresh_period)
+        cadence_janky_count = sum(1 for iv in intervals_ms if iv > limit_ms)
+        janky_pct_cadence = (
+            (cadence_janky_count / len(intervals_ms) * 100.0) if intervals_ms else None
+        )
+        if fps is not None:
+            dropped_vs_expected_pct = max(0.0, 1.0 - (fps / expected_fps)) * 100.0
+
     return {
         "frames": n,
         "fps": fps,
@@ -210,13 +244,66 @@ def compute_stats(refresh_period, actual_times):
         "max_ms": max_iv,
         "janky_count": janky_count,
         "janky_pct": janky_pct,
+        "janky_pct_cadence": janky_pct_cadence,
+        "expected_fps": expected_fps,
+        "cadence_limit_ms": limit_ms,
+        "dropped_vs_expected_pct": dropped_vs_expected_pct,
     }
+
+
+def print_summary(stats):
+    print("\n=== Ozet ===")
+    if stats["fps"] is not None:
+        print(f"Kare sayisi     : {stats['frames']}")
+        print(f"FPS (sunulan)   : {stats['fps']:.1f}")
+        rp = stats["refresh_period_ns"]
+        if rp:
+            print(f"Refresh period  : {rp} ns (~{1e9/rp:.1f} Hz)")
+        print(f"Kare araligi p50: {stats['p50_ms']:.2f} ms")
+        print(f"Kare araligi p95: {stats['p95_ms']:.2f} ms")
+        print(f"Kare araligi p99: {stats['p99_ms']:.2f} ms")
+        print(f"Kare araligi max: {stats['max_ms']:.2f} ms")
+        print(f"Takilma (janky) : {stats['janky_count']} kare (%{stats['janky_pct']:.1f})")
+        if stats.get("expected_fps"):
+            print(
+                f"Icerik temposuna gore takilma: %{stats['janky_pct_cadence']:.1f} "
+                f"(beklenen {stats['expected_fps']:.1f} fps, sinir {stats['cadence_limit_ms']:.2f} ms)"
+            )
+            if stats.get("dropped_vs_expected_pct") is not None:
+                print(f"Beklenene gore eksik kare: %{stats['dropped_vs_expected_pct']:.1f}")
+    else:
+        print("Yeterli kare toplanamadi (0 veya 1 gecerli kare).")
+
+
+def run_from_json(args):
+    """Daha once kaydedilmis frames_actual_ns/refresh_ns verisinden, adb'ye
+    hic gitmeden istatistikleri (ozellikle icerik temposu jank'ini) yeniden
+    hesaplar. 50-perf-capture.sh yakalama bittikten, in_fps medyani bilindikten
+    sonra bu modu kullanir."""
+    with open(args.from_json, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    actual_times = data.get("frames_actual_ns") or []
+    refresh_period = data.get("refresh_ns") or data.get("refresh_period_ns")
+
+    stats = compute_stats(refresh_period, actual_times, expected_fps=args.expected_fps)
+    stats["layer"] = data.get("layer")
+    stats["partial"] = data.get("partial", False)
+    stats["frames_actual_ns"] = actual_times
+    stats["refresh_ns"] = refresh_period
+
+    print_summary(stats)
+
+    if args.json:
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+        print(f"\nJSON yazildi: {args.json}")
 
 
 def main():
     ap = argparse.ArgumentParser(description="SurfaceFlinger jank/fps olcumu")
-    ap.add_argument("--adb", required=True, help="adb binary yolu")
-    ap.add_argument("--device", required=True, help="adb -s <device>")
+    ap.add_argument("--adb", default=None, help="adb binary yolu")
+    ap.add_argument("--device", default=None, help="adb -s <device>")
     ap.add_argument(
         "--layer-regex",
         default=None,
@@ -226,7 +313,25 @@ def main():
     ap.add_argument("--seconds", type=float, default=20.0, help="Toplam olcum suresi (sn)")
     ap.add_argument("--interval", type=float, default=1.0, help="Sorgu araligi (sn)")
     ap.add_argument("--json", default=None, help="Sonucu JSON olarak da yaz")
+    ap.add_argument(
+        "--expected-fps",
+        type=float,
+        default=None,
+        help="Icerik kare hizi (orn. 25); verilirse temposal-uyumlu (cadence-aware) jank de hesaplanir",
+    )
+    ap.add_argument(
+        "--from-json",
+        default=None,
+        help="adb'ye gitmeden, daha once yazilmis JSON'daki frames_actual_ns/refresh_ns'den yeniden hesapla",
+    )
     args = ap.parse_args()
+
+    if args.from_json:
+        run_from_json(args)
+        return
+
+    if not args.adb or not args.device:
+        ap.error("--from-json verilmedigi surece --adb ve --device zorunludur")
 
     candidates = None
     if args.layer:
@@ -251,27 +356,18 @@ def main():
     refresh_period, actual_times, disappeared = collect(
         args.adb, args.device, layer, args.seconds, args.interval
     )
-    stats = compute_stats(refresh_period, actual_times)
+    stats = compute_stats(refresh_period, actual_times, expected_fps=args.expected_fps)
     stats["layer"] = layer
     stats["partial"] = disappeared
+    # Ham zaman damgalari: sonradan (offline) --from-json ile temposal jank
+    # yeniden hesaplanabilsin diye saklanir (orn. in_fps medyani bilinince).
+    stats["frames_actual_ns"] = actual_times
+    stats["refresh_ns"] = refresh_period
 
     if disappeared:
         print("NOT: Katman olcum sirasinda kayboldu (oturum bitmis olabilir), kismi sonuc.")
 
-    print("\n=== Ozet ===")
-    if stats["fps"] is not None:
-        print(f"Kare sayisi     : {stats['frames']}")
-        print(f"FPS (sunulan)   : {stats['fps']:.1f}")
-        rp = stats["refresh_period_ns"]
-        if rp:
-            print(f"Refresh period  : {rp} ns (~{1e9/rp:.1f} Hz)")
-        print(f"Kare araligi p50: {stats['p50_ms']:.2f} ms")
-        print(f"Kare araligi p95: {stats['p95_ms']:.2f} ms")
-        print(f"Kare araligi p99: {stats['p99_ms']:.2f} ms")
-        print(f"Kare araligi max: {stats['max_ms']:.2f} ms")
-        print(f"Takilma (janky) : {stats['janky_count']} kare (%{stats['janky_pct']:.1f})")
-    else:
-        print("Yeterli kare toplanamadi (0 veya 1 gecerli kare).")
+    print_summary(stats)
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as f:
