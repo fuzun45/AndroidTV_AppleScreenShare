@@ -401,7 +401,9 @@ class VideoRenderer(ctx: Context) {
         private const val FEED_WAIT_US = 20_000L
         private const val FEED_RETRIES = 10
         private const val FIRST_FEED_RETRIES = 50
-        // decode straight into the display surface (hardware video plane); false = upstream GL path
-        const val DIRECT_OUTPUT = true
+        // off: decoding straight into the display surface did not reach the hardware video plane
+        // on this TV (HWC still composites it on the GPU) and its FIFO queueing built up 4-5 s of
+        // latency (M5, M7). The upstream GL path keeps only the newest frame and adds no latency
+        const val DIRECT_OUTPUT = false
     }
 }
