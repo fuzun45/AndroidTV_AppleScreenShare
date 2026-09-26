@@ -123,7 +123,7 @@ class VideoRenderer(ctx: Context) {
         stopCodec()
         // a released codec leaves its last frame on the display; hand the surface back to the
         // pipeline so it can be painted black
-        displaySurface?.let { pipeline.setDisplaySurface(it) }
+        if (DIRECT_OUTPUT) displaySurface?.let { pipeline.setDisplaySurface(it) }
         pipeline.clear()
     }
 
@@ -310,7 +310,7 @@ class VideoRenderer(ctx: Context) {
     private fun _startDecoder(c: MediaCodec, format: MediaFormat, surface: Surface, h265: Boolean) {
         try {
             c.configure(format, surface, null, 0)
-            c.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+            if (DIRECT_OUTPUT) c.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
             c.start()
         } catch (e: Exception) {
             try { c.release() } catch (_: Exception) {}
