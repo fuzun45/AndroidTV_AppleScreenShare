@@ -198,6 +198,8 @@ req="$(safe_grep -o 'req=[0-9x@]*' "$OUT/tvmirrorstats.log" | tail -n1 | sed 's/
 recv="$(safe_grep -o 'recv=[0-9x]*' "$OUT/tvmirrorstats.log" | tail -n1 | sed 's/recv=//')"
 codec="$(safe_grep -o 'codec=[A-Za-z0-9._-]*' "$OUT/tvmirrorstats.log" | tail -n1 | sed 's/codec=//')"
 audio="$(safe_grep -o 'audio=[A-Za-z0-9._-]*' "$OUT/tvmirrorstats.log" | tail -n1 | sed 's/audio=//')"
+# ölçüm süresince görülen codec çıkış yolları (direct/gl); karışıksa ikisi de yazılır
+out_paths="$(safe_grep -o 'out=[a-z]*' "$OUT/tvmirrorstats.log" | sed 's/out=//' | sort | uniq -c | awk '{printf "%s%s(%s)", sep, $2, $1; sep=" "}')"
 decoder="$(safe_grep -o 'decoder=[^ ]*' "$OUT/tvmirrorstats.log" | tail -n1 | sed 's/decoder=//')"
 in_fps_med="$(extract_median_field "$OUT/tvmirrorstats.log" 'in_fps=')"
 dec_fps_med="$(extract_median_field "$OUT/tvmirrorstats.log" 'dec_fps=')"
@@ -333,6 +335,7 @@ SUMMARY="$OUT/SUMMARY.md"
     echo "presented: ${presented_fps} fps (jank.py, sunulan)"
     echo "dropped  : ${dropped_last:-NA} (son deger)"
     echo "audio    : ${audio:-NA}"
+    echo "output   : ${out_paths:-NA} (codec cikis yolu, saniye sayisi)"
     echo "\`\`\`"
     echo
     echo "## Takilma (Jank)"
