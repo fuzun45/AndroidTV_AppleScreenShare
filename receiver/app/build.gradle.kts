@@ -31,7 +31,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.github.jqssun.airplay"
+        // Upstream'la yan yana kurulabilsin diye ayrı kimlik; namespace (kaynak paketi) aynı kalıyor.
+        applicationId = "io.github.fuzun45.tvmirror"
         minSdk = 24
         targetSdk = 36
         versionCode = 31
@@ -58,7 +59,8 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfigs.findByName("release")?.let { signingConfig = it }
+            // Release anahtarı yoksa debug anahtarıyla imzala: ADB ile sideload ediliyor, imzasız APK kurulamaz.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             ndk { abiFilters += allAbis }
         }
         // debuggable build with HWASan (arm64) + UBSan in native code
