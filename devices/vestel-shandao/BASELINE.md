@@ -34,7 +34,9 @@ Swap aktif ama durum "normal". Debloat şimdilik yapılmıyor; ölçüm bellek b
 | Router | Aynı SSID'de 2.4 GHz BSSID de var (2437 MHz) |
 | Mac → TV ping (50 paket) | min 2.6 / ort 14.9 / maks 57.1 ms, stddev 17.9 ms, kayıp %0 |
 
-TV tarafı iyi. Jitter yüksek; muhtemel kaynak Mac'in bandı veya güç tasarrufu. Mac ve iPhone'un 5 GHz BSSID'ye bağlı olduğu yansıtma testinden önce doğrulanacak.
+TV tarafı iyi. Mac de aynı 5 GHz kanalında (kanal 44 = 5220 MHz, 80 MHz), yani bant farkı yok.
+Jitter'ın muhtemel kaynakları macOS AWDL kanal atlaması veya Wi-Fi güç tasarrufu. Yansıtmadaki
+etkisi `in_fps` dalgalanması ve `presented` jank'ıyla ölçülecek; tek başına bir sorun sayılmıyor.
 
 ## AirPlay / portlar
 
