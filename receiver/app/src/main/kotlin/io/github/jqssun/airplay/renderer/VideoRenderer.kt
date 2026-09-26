@@ -4,8 +4,6 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
-import android.os.Handler
-import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
 import io.github.jqssun.airplay.renderer.DecoderSelector.Companion.videoCaps
@@ -50,13 +48,6 @@ class VideoRenderer(ctx: Context) {
     // anchors that map decoder PTS (us) to System.nanoTime() for scheduled rendering
     private var _ptsBaseUs = Long.MIN_VALUE
     private var _wallBaseNs = 0L
-    // PTS of frames released to the display but not yet reported shown (direct output
-    // back-pressure). A shown frame also retires every older one: SF drops frames silently
-    private val _inFlightPts = ArrayDeque<Long>()
-    @Volatile private var _lastRenderedNs = 0L
-    // lives as long as the renderer: release() is followed by a restart when settings change
-    private val _renderThread = HandlerThread("FrameRendered").apply { start() }
-    private val _renderHandler = Handler(_renderThread.looper)
 
     fun setResolution(w: Int, h: Int) {
         videoWidth = w
@@ -326,14 +317,6 @@ class VideoRenderer(ctx: Context) {
             throw e
         }
         codec = c
-        synchronized(_inFlightPts) { _inFlightPts.clear() }
-        _lastRenderedNs = System.nanoTime()
-        c.setOnFrameRenderedListener({ _, ptsUs, _ ->
-            synchronized(_inFlightPts) {
-                while (_inFlightPts.isNotEmpty() && _inFlightPts.first() <= ptsUs) _inFlightPts.removeFirst()
-            }
-            _lastRenderedNs = System.nanoTime()
-        }, _renderHandler)
         codecName = (if (h265) "H.265" else "H.264") + " (${c.name})"
         if (MirrorStats.ENABLED) MirrorStats.onSessionStart(h265, c.name)
     }
@@ -361,22 +344,10 @@ class VideoRenderer(ctx: Context) {
     private fun drainOutput() {
         val c = codec ?: return
         val info = MediaCodec.BufferInfo()
-        // direct output queues buffers FIFO on the display surface: when composition is slower
-        // than decode the queue, and with it latency, grows without bound. Keep only the newest
-        // ready buffer and stamp it "now" so BLAST also drops anything already late
-        val latestOnly = !scheduledOutputBufferRelease && codecTarget != null && codecTarget === displaySurface
-        var pending = -1
-        var pendingPtsUs = 0L
         while (true) {
             val idx = c.dequeueOutputBuffer(info, 0)
             if (idx < 0) break
             _recordOutputFrameTime()
-            if (latestOnly) {
-                if (pending >= 0) _dropOutput(c, pending)
-                pending = idx
-                pendingPtsUs = info.presentationTimeUs
-                continue
-            }
             if (scheduledOutputBufferRelease) {
                 // schedule frame at VSYNC matching its NTP presentation time
                 val ptsUs = info.presentationTimeUs
@@ -390,28 +361,6 @@ class VideoRenderer(ctx: Context) {
             }
             if (MirrorStats.ENABLED) MirrorStats.onFrameOut()
         }
-        if (pending >= 0) {
-            val now = System.nanoTime()
-            // if the display is still behind, skip this frame instead of queueing it; the stale
-            // check keeps us rendering on devices that never report onFrameRendered
-            val behind = synchronized(_inFlightPts) {
-                if (now - _lastRenderedNs >= STALL_RESET_NS) _inFlightPts.clear()
-                _inFlightPts.size >= MAX_IN_FLIGHT
-            }
-            if (behind) {
-                _dropOutput(c, pending)
-            } else {
-                c.releaseOutputBuffer(pending, now)
-                synchronized(_inFlightPts) { _inFlightPts.addLast(pendingPtsUs) }
-                if (MirrorStats.ENABLED) MirrorStats.onFrameOut()
-            }
-        }
-    }
-
-    private fun _dropOutput(c: MediaCodec, idx: Int) {
-        c.releaseOutputBuffer(idx, false)
-        droppedFrames++
-        if (MirrorStats.ENABLED) MirrorStats.onDropped()
     }
 
     fun release() = synchronized(lock) {
@@ -454,8 +403,5 @@ class VideoRenderer(ctx: Context) {
         private const val FIRST_FEED_RETRIES = 50
         // decode straight into the display surface (hardware video plane); false = upstream GL path
         const val DIRECT_OUTPUT = true
-        // at most this many frames may wait on the display before new ones are skipped
-        private const val MAX_IN_FLIGHT = 2
-        private const val STALL_RESET_NS = 250_000_000L
     }
 }
