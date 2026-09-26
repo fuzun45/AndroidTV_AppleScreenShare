@@ -92,6 +92,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
+          # docs/RELEASE-<tag>.md varsa release metni olarak kullanılır (yol depo köküne göre)
+          body_path: ${{ hashFiles(format('docs/RELEASE-{0}.md', github.ref_name)) != '' && format('docs/RELEASE-{0}.md', github.ref_name) || '' }}
           files: |
             receiver/out/tvmirror.apk
             receiver/out/tvmirror.apk.sha256

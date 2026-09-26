@@ -2,6 +2,11 @@
 
 Mac ve iPhone'dan sistemin kendi **Ekran Yansıtma** menüsüyle Android TV'ye görüntü ve ses aktarır. Uygulama [jqssun/android-airplay-server](https://github.com/jqssun/android-airplay-server) (`c8defdd`, GPL-3.0) tabanlıdır.
 
+### İmza
+APK sabit bir release anahtarıyla imzalı (`CN=TV Mirror`). Sertifika SHA-256:
+`ee1786a8d0eca389e65b973f35592038371e259edce9f0514eb370629af8cabf`
+Sonraki sürümler de aynı anahtarla imzalanacağı için ayarlar korunarak üzerine kurulabilir (`adb install -r`). Bu sürüm eski CI derlemelerinin yerine kuruluyorsa bir kez kaldır-kur gerekir.
+
 ### Kurulum
 ```
 ./scripts/30-install.sh tvmirror.apk      # ya da: adb install -r tvmirror.apk
