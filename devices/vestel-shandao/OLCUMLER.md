@@ -174,3 +174,4 @@ Mac ekranı ve TV aynı fotoğraf karesinde (sayaçta saniye ve salise hanesi):
 - **Belirti:** sunucu açılışta arka planda başlıyor ve Mac'te görünüyor. Bağlanınca görüntü, uygulama elle açılana kadar gelmiyor.
 - **Neden:** "Bağlanınca uygulamayı aç" (varsayılan açık) arka plandan activity başlatmak için Android 10+ `SYSTEM_ALERT_WINDOW` izni istiyor. İzin her kaldır-kur işleminde sıfırlanıyor ve TV'de ayar ekranı yok.
 - **Çözüm:** `30-install.sh` izni adb ile veriyor, `40-verify.sh` izni kontrol ediyor. Uygulama kodu değişmedi.
+- **Doğrulandı (kullanıcı):** izin verildikten sonra TV kapatılıp açıldı; uygulama açılmadan Mac'ten yansıtılınca görüntü kendiliğinden ekrana geldi.
