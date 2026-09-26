@@ -71,6 +71,13 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk out/tvmirror.apk
           cd out && sha256sum tvmirror.apk > tvmirror.apk.sha256 && cat tvmirror.apk.sha256
 
+      # Hangi anahtarla imzalandığı görünsün: sabit release anahtarında bu SHA-256
+      # her derlemede aynı kalmalı (değişirse güncelleme kaldır-kur ister).
+      - name: İmza sertifikası
+        run: |
+          APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -n1)"
+          "$APKSIGNER" verify --print-certs out/tvmirror.apk | grep -E 'Signer #1 certificate (DN|SHA-256)'
+
       - uses: actions/upload-artifact@v4
         with:
           name: tvmirror-${{ github.sha }}
