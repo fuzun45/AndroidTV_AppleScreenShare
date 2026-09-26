@@ -19,6 +19,14 @@ elif [ -n "${1:-}" ]; then
     APK_PATH="$1"
 else
     log_info "APK yolu verilmedi, ~/Downloads altinda en yeni tvmirror.apk araniyor..."
+    # Safari artifact zip'ini genelde kendisi acar; acmadiysa en yeni zip'i burada ac.
+    if [ -z "$(find "$HOME/Downloads" -iname 'tvmirror.apk' -print 2>/dev/null | head -n1)" ]; then
+        zip_path="$(ls -t "$HOME"/Downloads/tvmirror-*.zip 2>/dev/null | head -n1)"
+        if [ -n "$zip_path" ]; then
+            log_info "Zip aciliyor: $zip_path"
+            unzip -o -q "$zip_path" -d "${zip_path%.zip}" || die "Zip acilamadi: $zip_path"
+        fi
+    fi
     APK_PATH="$(find "$HOME/Downloads" -iname 'tvmirror.apk' -print 2>/dev/null | xargs -I{} stat -f '%m %N' {} 2>/dev/null | sort -rn | head -n1 | cut -d' ' -f2-)"
     [ -n "$APK_PATH" ] || die "~/Downloads altinda tvmirror.apk bulunamadi, lutfen APK yolunu argument olarak verin"
 fi

@@ -78,16 +78,14 @@ else
 fi
 
 # 6) CPU / PSS
-adbs top -n 1 -b > "$OUT/top.txt" 2>&1
-app_cpu_line="$(safe_grep "$PKG" "$OUT/top.txt" | head -n1)"
-printf 'BILGI - CPU satiri (top -n1 -b, cok cekirdekli sistemde %%100 = 1 cekirdek): %s\n' "${app_cpu_line:-bulunamadi}"
+app_cpu_now="$(app_cpu)"
+printf 'BILGI - Uygulama CPU (tek ornek, %%100 = 1 cekirdek): %s\n' "${app_cpu_now:-bulunamadi}"
 
-adbs dumpsys meminfo "$PKG" > "$OUT/meminfo-pkg.txt"
-pss_line="$(safe_grep -m1 'TOTAL PSS' "$OUT/meminfo-pkg.txt")"
-if [ -n "$pss_line" ]; then
-    pass "PSS okunabildi: $pss_line"
+pss_kb="$(app_pss_kb)"
+if [ -n "$pss_kb" ]; then
+    pass "PSS: ${pss_kb} KB"
 else
-    fail "PSS okunamadi (dumpsys meminfo $PKG)"
+    fail "PSS okunamadi (dumpsys meminfo <pid>)"
 fi
 
 # 7) Guvenlik probu: TCP baglanti odakli aktiviteyi degistiriyor mu?

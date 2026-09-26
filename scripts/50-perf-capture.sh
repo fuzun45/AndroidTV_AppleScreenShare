@@ -38,7 +38,7 @@ adbs logcat -c
 log_info "Baslangic HWC/SurfaceFlinger anlik goruntusu..."
 adbs dumpsys SurfaceFlinger > "$OUT/sf-before.txt"
 safe_grep -i 'missed' "$OUT/sf-before.txt" > "$OUT/missed-before.txt"
-safe_grep -A2 -iE 'Comp Type' "$OUT/sf-before.txt" > "$OUT/complayers-before.txt"
+python3 "$REPO_ROOT/tools/hwc_layers.py" < "$OUT/sf-before.txt" > "$OUT/complayers-before.txt" 2>/dev/null || true
 
 log_info "tools/jank.py arka planda baslatiliyor (${SECONDS_DUR}sn)..."
 JANK_JSON="$OUT/jank.json"
@@ -54,14 +54,15 @@ printf 'ts\tcpu_line\tpss_kb\tmem_available_kb\tswap_free_kb\tpswpin\tpswpout\tr
 elapsed=0
 while [ "$elapsed" -lt "$SECONDS_DUR" ]; do
     ts="$(date +%s)"
-    cpu_line="$(adbs top -n 1 -b 2>/dev/null | safe_grep "$PKG" | head -n1 | tr '\t' ' ')"
-    pss_kb="$(adbs dumpsys meminfo "$PKG" 2>/dev/null | safe_grep -m1 'TOTAL PSS' | tr -s ' ' | cut -d' ' -f3)"
+    cpu_line="$(app_cpu)"
+    pss_kb="$(app_pss_kb)"
     mem_avail="$(adbs cat /proc/meminfo 2>/dev/null | safe_grep MemAvailable | tr -s ' ' | cut -d' ' -f2)"
     swap_free="$(adbs cat /proc/meminfo 2>/dev/null | safe_grep SwapFree | tr -s ' ' | cut -d' ' -f2)"
     pswpin="$(adbs cat /proc/vmstat 2>/dev/null | safe_grep '^pswpin ' | cut -d' ' -f2)"
     pswpout="$(adbs cat /proc/vmstat 2>/dev/null | safe_grep '^pswpout ' | cut -d' ' -f2)"
-    rssi="$(adbs dumpsys wifi 2>/dev/null | safe_grep -m1 -i 'rssi' | tr -s ' ')"
-    linkspeed="$(adbs dumpsys wifi 2>/dev/null | safe_grep -m1 -i 'link speed' | tr -s ' ')"
+    wifi_line="$(wifi_now)"
+    rssi="$(echo "$wifi_line" | grep -oE 'RSSI: -?[0-9]+' | grep -oE -- '-?[0-9]+')"
+    linkspeed="$(echo "$wifi_line" | grep -oE 'Link speed: [0-9]+' | grep -oE '[0-9]+')"
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$ts" "${cpu_line:-NA}" "${pss_kb:-NA}" "${mem_avail:-NA}" "${swap_free:-NA}" \
         "${pswpin:-NA}" "${pswpout:-NA}" "${rssi:-NA}" "${linkspeed:-NA}" >> "$SAMPLES"
@@ -75,7 +76,7 @@ wait "$JANK_PID" 2>/dev/null || true
 log_info "Bitis HWC/SurfaceFlinger anlik goruntusu..."
 adbs dumpsys SurfaceFlinger > "$OUT/sf-after.txt"
 safe_grep -i 'missed' "$OUT/sf-after.txt" > "$OUT/missed-after.txt"
-safe_grep -A2 -iE 'Comp Type' "$OUT/sf-after.txt" > "$OUT/complayers-after.txt"
+python3 "$REPO_ROOT/tools/hwc_layers.py" < "$OUT/sf-after.txt" > "$OUT/complayers-after.txt" 2>/dev/null || true
 
 log_info "TvMirrorStats logcat kaydediliyor..."
 adbs logcat -d -s TvMirrorStats:* > "$OUT/tvmirrorstats.log"
@@ -111,17 +112,19 @@ if [ -f "$JANK_JSON" ]; then
     janky_pct="$(python3 -c "import json,sys; d=json.load(open('$JANK_JSON')); print(d.get('janky_pct') if d.get('janky_pct') is not None else 'NA')" 2>/dev/null || echo NA)"
 fi
 
-video_layer_comptype="$(safe_grep -B3 -i 'tvmirror' "$OUT/complayers-after.txt" | safe_grep -m1 'Comp Type' || echo NA)"
-other_client_layers="$(safe_grep -B3 'Comp Type = CLIENT' "$OUT/complayers-after.txt" | safe_grep -v 'tvmirror' | safe_grep -iE 'SurfaceView|Layer' | sort -u)"
+# complayers-*.txt: "<TIP>\t<katman adi>" (tools/hwc_layers.py)
+video_layer_comptype="$(awk -F'\t' '$2 ~ /SurfaceView/ && $2 ~ /tvmirror/ {print $1; exit}' "$OUT/complayers-after.txt")"
+video_layer_comptype="${video_layer_comptype:-NA}"
+other_client_layers="$(awk -F'\t' '$1 == "CLIENT" && !($2 ~ /SurfaceView/ && $2 ~ /tvmirror/) {print $2}' "$OUT/complayers-after.txt")"
 
-missed_before_n="$(safe_grep -o '[0-9]\+' "$OUT/missed-before.txt" | tail -n1)"
-missed_after_n="$(safe_grep -o '[0-9]\+' "$OUT/missed-after.txt" | tail -n1)"
+missed_before_n="$(safe_grep -m1 'HWC missed' "$OUT/missed-before.txt" | grep -oE '[0-9]+' | tail -n1)"
+missed_after_n="$(safe_grep -m1 'HWC missed' "$OUT/missed-after.txt" | grep -oE '[0-9]+' | tail -n1)"
 missed_delta="NA"
 if [ -n "${missed_before_n:-}" ] && [ -n "${missed_after_n:-}" ]; then
     missed_delta=$((missed_after_n - missed_before_n))
 fi
 
-cpu_median="$(awk -F'\t' 'NR>1 && $2!="NA"{print $2}' "$SAMPLES" | safe_grep -oE '[0-9]+%' | tr -d '%' | sort -n | awk '{a[NR]=$1} END{if(NR==0){print "NA"; exit} if(NR%2==1) print a[(NR+1)/2]; else print (a[NR/2]+a[NR/2+1])/2}')"
+cpu_median="$(awk -F'\t' 'NR>1 && $2!="NA"{print $2}' "$SAMPLES" | safe_grep -E '^[0-9]+(\.[0-9]+)?$' | sort -n | awk '{a[NR]=$1} END{if(NR==0){print "NA"; exit} if(NR%2==1) print a[(NR+1)/2]; else print (a[NR/2]+a[NR/2+1])/2}')"
 pss_start="$(awk -F'\t' 'NR==2{print $3}' "$SAMPLES")"
 pss_end="$(awk -F'\t' 'END{print $3}' "$SAMPLES")"
 pss_peak="$(awk -F'\t' 'NR>1 && $3!="NA"{print $3}' "$SAMPLES" | sort -n | tail -n1)"

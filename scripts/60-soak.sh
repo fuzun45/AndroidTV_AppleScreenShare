@@ -58,7 +58,7 @@ case "$MODE" in
 
             no_crash="EVET"; check_crash "cycle$i" || { no_crash="HAYIR"; CRASH_FOUND=1; }
             proc_alive="EVET"; adbs pidof "$PKG" | safe_grep -q '[0-9]' || proc_alive="HAYIR"
-            pss="$(adbs dumpsys meminfo "$PKG" | safe_grep -m1 'TOTAL PSS' | tr -s ' ' | cut -d' ' -f3)"
+            pss="$(app_pss_kb)"
 
             layer_after="$(adbs dumpsys SurfaceFlinger --list | safe_grep -iE "$layer_regex" || true)"
             focus_after="$(adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp' | safe_grep "$PKG" || true)"

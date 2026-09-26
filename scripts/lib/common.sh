@@ -90,3 +90,42 @@ need_device() {
 safe_grep() {
     grep "$@" || true
 }
+
+# --- Uygulama süreci ölçümleri (PID üzerinden) ---
+# top uzun paket adlarını kırptığı için isimle grep güvenilir değil; PID kullanılıyor.
+app_pid() {
+    adbs pidof "$PKG" | tr -d '\r' | awk '{print $1}'
+}
+
+# Toplam PSS (KB). Android 14: "TOTAL PSS:   52341   TOTAL RSS: ...";
+# eski sürümler: "TOTAL   52341 ..." satırı.
+app_pss_kb() {
+    pid="$(app_pid)"
+    [ -n "$pid" ] || return 0
+    adbs dumpsys meminfo "$pid" | awk '
+        /TOTAL PSS:/ { for (i = 1; i <= NF; i++) if ($i == "PSS:") { print $(i + 1); exit } }
+        /^ *TOTAL +[0-9]/ { print $2; exit }'
+}
+
+# Tek bir top örneğinde uygulamanın %CPU değeri (tek çekirdek = 100).
+# toybox top başlığında "S[%CPU]" birleşik yazılır; veri satırında S ve %CPU ayrı alanlardır.
+app_cpu() {
+    pid="$(app_pid)"
+    [ -n "$pid" ] || return 0
+    adbs top -b -n 1 -p "$pid" | awk -v pid="$pid" '
+        /PID/ && /CPU/ {
+            for (i = 1; i <= NF; i++) {
+                if ($i == "S[%CPU]") { col = i + 1; break }
+                if ($i ~ /%CPU/)     { col = i;     break }
+            }
+            next
+        }
+        col && $1 == pid { print $col; exit }'
+}
+
+# Anlık Wi-Fi RSSI ve link hızı (yalnızca mWifiInfo satırından).
+wifi_now() {
+    adbs dumpsys wifi | awk -F', ' '/mWifiInfo SSID/ {
+        for (i = 1; i <= NF; i++) if ($i ~ /^(RSSI|Link speed):/) printf "%s ", $i
+        print ""; exit }'
+}
