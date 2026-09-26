@@ -102,20 +102,52 @@ while IFS= read -r cf; do
     adbp "$cf" "$OUT/codecs/" >/dev/null 2>&1 || true
 done < "$OUT/codecs/found-files.txt"
 
-codec_grep="$OUT/codecs/avc-hevc-grep.txt"
-: > "$codec_grep"
-for xf in "$OUT"/codecs/*.xml; do
-    [ -e "$xf" ] || continue
-    {
-        echo "== $xf =="
-        safe_grep -iE 'avc|hevc|h264|h265|size=|measured-frame-rate|performance-point|low-latency' "$xf"
-    } >> "$codec_grep"
-done
-section "Medya Codec Ozeti (AVC/HEVC, performans noktalari, low-latency)"
+codec_table="$OUT/codecs/video-decoders.txt"
+# XML'leri Mac'te ayrıştır: donanım/yazılım video decoder'ları, boyut sınırları,
+# 1080p/2160p ölçülmüş kare hızları ve low-latency özelliği. Performans XML'leri
+# aynı isimle "update" kaydı olarak geldiği için isme göre birleştiriliyor.
+python3 - "$OUT/codecs" > "$codec_table" 2>&1 <<'PY' || echo "(codec XML ayristirilamadi)" > "$codec_table"
+import glob, os, sys, xml.etree.ElementTree as ET
+d = {}
+for f in sorted(glob.glob(os.path.join(sys.argv[1], "*.xml"))):
+    try:
+        root = ET.parse(f).getroot()
+    except Exception:
+        continue
+    for dec in root.iter("Decoders"):
+        for mc in dec.iter("MediaCodec"):
+            name, typ = mc.get("name", ""), mc.get("type", "")
+            if not typ:
+                t = mc.find("Type")
+                typ = t.get("name", "") if t is not None else ""
+            if not typ.startswith("video/"):
+                continue
+            e = d.setdefault(name, {"type": typ, "limits": {}, "features": set(), "files": set()})
+            e["type"] = e["type"] or typ
+            e["files"].add(os.path.basename(f))
+            for lim in mc.iter("Limit"):
+                n = lim.get("name", "")
+                v = lim.get("range") or lim.get("value") or lim.get("max") or ""
+                if n in ("size", "blocks-per-second", "frame-rate") or n.startswith("measured-frame-rate-1920") \
+                        or n.startswith("measured-frame-rate-3840") or n.startswith("performance-point"):
+                    e["limits"][n] = v
+            for ft in mc.iter("Feature"):
+                e["features"].add(ft.get("name", ""))
+sw = lambda n: n.startswith(("OMX.google.", "c2.android."))
+for name in sorted(d, key=lambda n: (sw(n), d[n]["type"], n)):
+    e = d[name]
+    kind = "yazilim" if sw(name) else "DONANIM"
+    print(f"{kind:8} {e['type']:16} {name}")
+    for k, v in sorted(e["limits"].items()):
+        print(f"           {k} = {v}")
+    if e["features"]:
+        print(f"           features = {', '.join(sorted(e['features']))}")
+PY
+section "Video Decoder'lari (donanim once; boyut, 1080p/2160p olculmus fps, low-latency)"
 {
     echo '```'
-    if [ -s "$codec_grep" ]; then
-        head -n 80 "$codec_grep"
+    if [ -s "$codec_table" ]; then
+        cat "$codec_table"
     else
         echo "(codec XML dosyalarina erisilemedi veya bulunamadi)"
     fi
@@ -124,8 +156,15 @@ section "Medya Codec Ozeti (AVC/HEVC, performans noktalari, low-latency)"
 
 log_info "Wi-Fi durumu (dumpsys wifi)..."
 adbs dumpsys wifi > "$OUT/dumpsys-wifi-full.txt"
-safe_grep -iE 'frequency|rssi|link speed|linkspeed|is5ghzbandsupported|mis5ghzbandsupported|supported band' \
-    "$OUT/dumpsys-wifi-full.txt" > "$OUT/wifi-summary.txt"
+# Yalnızca anlık bağlantı satırı ve bant desteği; tüm geçmiş ham dosyada kalıyor.
+# SSID/BSSID/MAC özetten çıkarılıyor (özet repoya/sohbete kopyalanabiliyor).
+{
+    safe_grep -m1 'mWifiInfo SSID' "$OUT/dumpsys-wifi-full.txt" \
+        | sed -E 's/SSID: [^,]*,/SSID: <gizli>,/; s/BSSID: [^,]*,/BSSID: <gizli>,/; s/MAC: [^,]*,/MAC: <gizli>,/' \
+        | tr ',' '\n' | safe_grep -iE 'Wi-Fi standard|RSSI|Link speed|Tx Link|Rx Link|Frequency'
+    safe_grep -m1 -iE 'lastFreq=' "$OUT/dumpsys-wifi-full.txt" | grep -oE 'lastFreq=[0-9]+'
+    safe_grep -iE 'is5ghzbandsupported|mis5ghzbandsupported|supported band' "$OUT/dumpsys-wifi-full.txt" | head -n 5
+} > "$OUT/wifi-summary.txt"
 section "Wi-Fi Ozeti"
 {
     echo '```'
