@@ -94,9 +94,24 @@ adbs dumpsys SurfaceFlinger > "$OUT/sf-after.txt"
 safe_grep -i 'missed' "$OUT/sf-after.txt" > "$OUT/missed-after.txt"
 python3 "$REPO_ROOT/tools/hwc_layers.py" < "$OUT/sf-after.txt" > "$OUT/complayers-after.txt" 2>/dev/null || true
 
+log_info "Video SurfaceView katmani (bitis) yeniden seciliyor..."
+adbs dumpsys SurfaceFlinger --list > "$OUT/sf-list-after.txt"
+adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp' > "$OUT/focus-after.txt"
+FOCUS_TEXT_AFTER="$(cat "$OUT/focus-after.txt")"
+python3 "$REPO_ROOT/tools/layer_select.py" --focus "$FOCUS_TEXT_AFTER" < "$OUT/sf-list-after.txt" > "$OUT/layer-after.txt"
+VIDEO_LAYER_END="$(head -n1 "$OUT/layer-after.txt")"
+if [ -z "$VIDEO_LAYER_END" ]; then
+    VIDEO_LAYER_END="$VIDEO_LAYER"
+fi
+if [ -n "$VIDEO_LAYER_END" ]; then
+    log_ok "Video katmani (bitis): $VIDEO_LAYER_END"
+fi
+if [ -n "$VIDEO_LAYER" ] && [ -n "$VIDEO_LAYER_END" ] && [ "$VIDEO_LAYER_END" != "$VIDEO_LAYER" ]; then
+    log_warn "Video katmani, olcum sirasinda yeniden olusturulmus (yuzey degisti): baslangic=$VIDEO_LAYER bitis=$VIDEO_LAYER_END"
+fi
+
 log_info "Video katmani tampon (buffer) detaylari cikariliyor..."
-export VIDEO_LAYER
-python3 -c '
+VIDEO_LAYER="$VIDEO_LAYER_END" python3 -c '
 import os, re, sys
 
 video = os.environ.get("VIDEO_LAYER", "").strip()
@@ -237,8 +252,7 @@ fi
 # gordugu ad, VIDEO_LAYER'daki sonek/parantezleri iceremeyebilir; bu yuzden tam
 # esitlik tutmazsa birbirini icerme, o da tutmazsa ayni "#<id>" ile eslesen
 # SurfaceView satirina dusuluyor (tools/layer_select.py'deki secime paralel).
-export VIDEO_LAYER
-python3 -c '
+VIDEO_LAYER="$VIDEO_LAYER_END" python3 -c '
 import os, re, sys
 
 video = os.environ.get("VIDEO_LAYER", "").strip()
@@ -337,6 +351,13 @@ SUMMARY="$OUT/SUMMARY.md"
     echo "audio    : ${audio:-NA}"
     echo "output   : ${out_paths:-NA} (codec cikis yolu, saniye sayisi)"
     echo "\`\`\`"
+    if echo "$dec_fps_med" | safe_grep -qE '^[0-9]+(\.[0-9]+)?$' && echo "$presented_fps" | safe_grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+        drop_pct="$(awk -v d="$dec_fps_med" -v p="$presented_fps" 'BEGIN{ if (d > 0 && p < 0.9*d) printf "%.0f", (1-p/d)*100; else print "" }')"
+        if [ -n "$drop_pct" ]; then
+            echo
+            echo "UYARI: decode edilen karelerin %${drop_pct}'i ekrana ulasmadi (kompozisyon darbogazi)"
+        fi
+    fi
     echo
     echo "## Takilma (Jank)"
     echo
@@ -362,12 +383,20 @@ SUMMARY="$OUT/SUMMARY.md"
     echo "## HWC Katman Durumu"
     echo
     if [ -n "$VIDEO_LAYER" ]; then
-        echo "- Secilen video katmani: \`${VIDEO_LAYER}\`"
+        echo "- Secilen video katmani (baslangic): \`${VIDEO_LAYER}\`"
     else
-        echo "- Secilen video katmani: bulunamadi (jank.py kendi ici secimini denedi, asagida adaylar)"
+        echo "- Secilen video katmani (baslangic): bulunamadi (jank.py kendi ici secimini denedi, asagida adaylar)"
         echo "\`\`\`"
         safe_grep '^# aday:' "$OUT/layer.txt"
         echo "\`\`\`"
+    fi
+    if [ -n "$VIDEO_LAYER_END" ]; then
+        echo "- Secilen video katmani (bitis): \`${VIDEO_LAYER_END}\`"
+    else
+        echo "- Secilen video katmani (bitis): bulunamadi"
+    fi
+    if [ -n "$VIDEO_LAYER" ] && [ -n "$VIDEO_LAYER_END" ] && [ "$VIDEO_LAYER" != "$VIDEO_LAYER_END" ]; then
+        echo "- UYARI: katman olcum sirasinda yeniden olusturuldu (yuzey degisti); presented olcumu kismi olabilir"
     fi
     echo "- Video katmani Comp Type: ${video_layer_comptype:-NA}"
     echo "- Diger CLIENT (GPU) katmanlari:"
