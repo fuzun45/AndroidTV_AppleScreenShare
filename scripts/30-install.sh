@@ -19,7 +19,7 @@ apk_from() {
         *.zip)
             [ -f "$src" ] || die "Zip bulunamadi: $src"
             dest="${src%.zip}"
-            log_info "Zip aciliyor: $src"
+            log_info "Zip aciliyor: $src" >&2
             unzip -o -q "$src" -d "$dest" || die "Zip acilamadi: $src"
             src="$dest"
             ;;
