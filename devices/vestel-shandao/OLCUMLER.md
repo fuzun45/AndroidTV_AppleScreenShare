@@ -84,3 +84,21 @@ Yorum:
 - Sonuç: bu TV'nin HWC'si video düzlemine yalnızca vendor handle tamponlarını ya da tünelli (SIDEBAND) akışı alıyor gibi görünüyor. Yan yüklenen alıcı bu yüzden GPU kompozisyonunun ~25 fps tavanında kalıyor.
 
 **Karar (kullanıcı):** ~25 fps kabul edildi. Proje kararlılık, A/V senkronu, soak/sızıntı testleri ve dokümanlarla kapatılacak. Tünelli oynatma ileride denenebilecek bir yol olarak kayıtta duruyor.
+
+## M7: 3bd6ab3 (doğrudan çıkış + bekleyen kare sınırı), Mac, 2026-09-26 14:58: REGRESYON
+
+| req | recv | in | dec | presented | dropped | output | kullanıcı |
+|---|---|---|---|---|---|---|---|
+| 1920x1080@30 | 1920x1080 H.264 | 25.3 | **7.5** | **7.2** | **3988** | direct | 4–5 sn gecikme, kare atlıyor |
+
+- `1dd51c9`'daki sınır `onFrameRendered` bildirimlerine dayanıyordu. Bu TV'de bildirimler gelmiyor, bu yüzden kareler 250 ms'de bir gösterildi.
+- Gecikme doğrudan çıkıştan (`cb2c07a`) geliyor. İkisi de geri alındı (`6a7755d`, `c1ab6ee`, `1cb029b`).
+
+## M8 (A/B'nin A kolu): db9c157 (upstream GL yolu + kimlik), Mac, 2026-09-26 15:08
+
+| req | recv | in | dec | presented | dropped | içerik temposuna göre jank | HWC |
+|---|---|---|---|---|---|---|---|
+| 3840x2160@60 (ayar AUTO) | 3840x2160 H.264 | 27.0 | 27.2 | **25.6** | 0 | %1.68 | CLIENT (RGBA/GL) |
+
+- Referans: upstream GL yolu gecikme biriktirmiyor ve ~27 fps girişin %95'ini gösteriyor. CPU %41, PSS ~61–69 MB.
+- B kolu (`1cb029b`: aynı GL yolu + 1080p/30 varsayılanı + bayat kare temizliği) aynı içerikle ölçülecek. B, A'dan kötü değilse kalır.
