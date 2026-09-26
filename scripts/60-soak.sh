@@ -35,14 +35,24 @@ app_surfaceview_layer() {
     echo
 } > "$SOAK_MD"
 
+# Crash tamponu acilistan beri birikir: test oncesi eski kayitlar (or. onceki
+# APK'lar) her cevrimde yeniden sayilmasin diye yalnizca baslangica gore YENI
+# kayitlar sayilir, ve yalnizca bizim surecimize ait olanlar ("Process: <pkg>"
+# ya da "ANR in <pkg>"); baska uygulamanin cokmesi FAIL uretmez.
+PKG_RE="$(printf '%s' "$PKG" | sed 's/\./\\./g')"
+OUR_CRASH_RE="(Process: |ANR in )${PKG_RE}([^A-Za-z0-9_.]|$)"
+our_crash_count() {
+    grep -cE "$OUR_CRASH_RE" "$1" 2>/dev/null || true
+}
+adbs logcat -d -b crash > "$OUT/crash-buffer-baseline.txt" 2>&1 || true
+CRASH_BASE="$(our_crash_count "$OUT/crash-buffer-baseline.txt")"
+CRASH_BASE="${CRASH_BASE:-0}"
+
 check_crash() {
     adbs logcat -d -b crash > "$OUT/crash-buffer-$1.txt" 2>&1 || true
-    if safe_grep -qE 'ANR in|FATAL EXCEPTION' "$OUT/crash-buffer-$1.txt"; then
-        if safe_grep -q "$PKG" "$OUT/crash-buffer-$1.txt"; then
-            return 1
-        fi
-    fi
-    return 0
+    local n
+    n="$(our_crash_count "$OUT/crash-buffer-$1.txt")"
+    [ "${n:-0}" -le "$CRASH_BASE" ]
 }
 
 case "$MODE" in
