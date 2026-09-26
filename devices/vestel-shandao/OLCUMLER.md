@@ -59,3 +59,14 @@ Yorum:
 - HWC'nin katmanı reddetme sebebi araştırılıyor. Hipotezler: full range, üstteki tam ekran pencere, 1088 ölçeği. İlk adım referans olarak YouTube katmanıyla karşılaştırma.
 
 ³ 25 fps içerik 60 Hz'te 2/3 vsync ile gösterildiği için ham metrik düzgün akışı da takılma sayıyor. İçerik temposuna göre hesap eklendi.
+
+## M5: 97d3486 (1080p varsayılan, doğrudan çıkış), Mac, ~49 fps içerik, 2026-09-26 14:26
+
+| req | recv | in | dec | presented | output | kullanıcı |
+|---|---|---|---|---|---|---|
+| 1920x1080@60 | 1920x1080 H.264 | 49.2 | 49.2 | **24.8** | direct | **4–5 sn gecikme** |
+
+- **Tavan:** HWC video katmanını CLIENT yaptıkça SF her kareyi GPU'da 3840x2160 hedefte birleştiriyor. Bu çözünürlükten bağımsız olarak ~25 fps ile sınırlı. M4 kayıpsız görünüyordu, çünkü içerik zaten 25 fps'ti.
+- **Gecikme (regresyon):** doğrudan yolda kareler ekran yüzeyinde FIFO sıraya giriyor ve decoder beklediği için gecikme birikiyor. `1dd51c9` ile gösterilmeyi bekleyen kare sayısı en fazla 2'yle sınırlandı.
+- 2 dakikada ~74 MB swap-out: yansıtma sırasında bellek baskısı var.
+- 60 fps için video katmanının DEVICE (donanım düzlemi) olması şart. Sıradaki denemeler: renk aralığı deneyi, ardından tünelli oynatma.
