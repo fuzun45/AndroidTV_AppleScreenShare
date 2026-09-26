@@ -96,19 +96,26 @@ on run argv
 		end tell
 		try
 			set w to my openMirroringPanel()
-			set out to out & "== Yansitma paneli ==" & linefeed
-			tell application "System Events"
-				repeat with el in (entire contents of w)
-					try
-						set r to (role of el) as text
-						if r is in {"AXCheckBox", "AXButton", "AXStaticText", "AXDisclosureTriangle"} then
-							set v to ""
-							try
-								set v to (value of el) as text
-							end try
-							set out to out & "  " & r & " : " & my descOf(el) & " = " & v & linefeed
-						end if
-					end try
+			tell application "System Events" to tell application process "ControlCenter"
+				set out to out & "== Pencere sayisi: " & (count of windows) & " ==" & linefeed
+				repeat with wi from 1 to (count of windows)
+					set ww to window wi
+					set items_ to entire contents of ww
+					set out to out & "== Pencere " & wi & " (" & (count of items_) & " oge) ==" & linefeed
+					set k to 0
+					repeat with el in items_
+						set k to k + 1
+						if k > 120 then exit repeat
+						set r to "?"
+						try
+							set r to (role of el) as text
+						end try
+						set v to ""
+						try
+							set v to (value of el) as text
+						end try
+						set out to out & "  " & r & " : " & my descOf(el) & " = " & v & linefeed
+					end repeat
 				end repeat
 			end tell
 		on error msg
