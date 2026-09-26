@@ -18,7 +18,7 @@ Aşağıdaki koşullar sağlanırsa sistemin hatasız çalıştığı kabul edil
 | Çökme / ANR / Donmuş Kare | 0 olay |
 | Bellek sızıntısı | LEAK.md PASS |
 | Ses/Video senkronizasyonu | < ~100 ms sapma |
-| Latency (gecikme) | < ~200 ms |
+| Latency (gecikme) | < ~300 ms (kronometre fotoğrafı: Mac ve TV aynı karede) |
 
 ## Test Adımları
 

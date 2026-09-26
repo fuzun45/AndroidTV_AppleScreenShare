@@ -102,3 +102,13 @@ Yorum:
 
 - Referans: upstream GL yolu gecikme biriktirmiyor ve ~27 fps girişin %95'ini gösteriyor. CPU %41, PSS ~61–69 MB.
 - B kolu (`1cb029b`: aynı GL yolu + 1080p/30 varsayılanı + bayat kare temizliği) aynı içerikle ölçülecek. B, A'dan kötü değilse kalır.
+
+## M9: A/B, aynı içerik, ikisi de 1080p/30, 2026-09-26 15:22–15:30
+
+| sürüm | in | dec | presented | dropped | jank (içerik temposu) | eksik kare | CPU | PSS tepe |
+|---|---|---|---|---|---|---|---|---|
+| A `db9c157` (upstream GL) | 25.85 | 25.85 | 25.2 | 0 | %0.92 | %2.70 | %40 | 73.5 MB |
+| B `1cb029b` (GL + stats + bayat kare + yüzey iletimi) | 25.3 | 25.3 | 24.9 | 0 | %0.90 | %1.52 | %41 | 66.8 MB |
+
+- B, A'dan kötü değil; fark ölçüm gürültüsü içinde. **B son sürüm olarak kaldı.**
+- Gecikme fotoğrafı henüz yok; A/V senkron testiyle birlikte ölçülecek.

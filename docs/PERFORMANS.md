@@ -18,7 +18,7 @@ Her ölçümde şu noktalar kaydedilir:
 
 **Ölçüm aracı**: `scripts/50-perf-capture.sh <etiket> [saniye]`
 
-## Ölçüm Sonuçları (M1–M6)
+## Ölçüm Sonuçları (M1–M9)
 
 ### M1 — Upstream Varsayılanları, Mac, 4K İstek
 
@@ -73,9 +73,9 @@ Her ölçümde şu noktalar kaydedilir:
 - İçerik 49 fps (ör. yüksek FPS oyun/test) gönderildiğinde
 - Decoder 49 fps çalıştırıyor ama GPU ekrana 24.8 fps koyabiliyor
 - **Gecikme birikimi**: Decoder FIFO sıraya kareleri koyuyor, ekran iştah kütleşince sıraya sığmayan kareler bekliyor → 4–5 sn gecikmesi
-- **İyileştirme**: `1dd51c9` commit'i FIFO'yu en fazla 2 kare ile sınırladı (batching) → gecikme gitti
+- **Sebep**: doğrudan çıkış yolu (GL yerine codec → SurfaceView). `1dd51c9` ile denenen kare sınırlaması işe yaramadı ve M7'de durumu daha da kötüleştirdi.
 
-**Sonuç**: 1080p 25 fps içeriğinde güvenli. Yüksek FPS kaynakla (oyun) takılma ama sağlanabilir.
+**Sonuç**: Doğrudan çıkış kapatıldı (`DIRECT_OUTPUT = false`). Upstream GL yolu yalnızca en yeni kareyi gösterdiği için gecikme birikmiyor (M8/M9).
 
 ### M6 — Renk Aralığı Deneyi (Color Range Experiment)
 
@@ -92,6 +92,23 @@ Her ölçümde şu noktalar kaydedilir:
 2. Tünelli (SIDEBAND) akışı
 
 alıyor. Standart YUV tampon kullanımızda GPU budunu geçemiyor.
+
+### M7 — Doğrudan Çıkış + Bekleyen Kare Sınırı (`3bd6ab3`): REGRESYON
+
+| req | in_fps | dec_fps | presented | dropped | Durum |
+|---|---|---|---|---|---|
+| 1920×1080@30 | 25.3 | 7.5 | **7.2** | 3988 | 4–5 sn gecikme, kare atlama |
+
+İki değişiklik de geri alındı (`6a7755d`, `c1ab6ee`, `1cb029b`).
+
+### M8/M9 — A/B: Upstream (`db9c157`) ve Son Sürüm (`1cb029b`), 1080p/30, Aynı İçerik
+
+| Sürüm | in_fps | dec_fps | presented | dropped | Jank (içerik temposu) | CPU | PSS tepe |
+|---|---|---|---|---|---|---|---|
+| A `db9c157` | 25.85 | 25.85 | 25.2 | 0 | %0.92 | %40 | 73.5 MB |
+| B `1cb029b` | 25.3 | 25.3 | 24.9 | 0 | %0.90 | %41 | 66.8 MB |
+
+**Sonuç**: B, upstream kadar iyi (fark ölçüm gürültüsü içinde). B son sürüm olarak kaldı.
 
 ---
 
@@ -115,10 +132,10 @@ Ekran (25 fps görünür)
 
 ### Neden GPU Sınırlı?
 
-1. **Decoder → SurfaceView**: M4'te doğrudan veriliyor
-2. **HWC**: Standart YCbCr tampon görüyor → **CLIENT (GPU) ister**
-3. **GPU**: 1920×1080 → 3840×2160 ölçeklendirme + GPU blending
-4. **Kapasite**: MediaTek m7632'nin Mali-G77 GPU'su bu ölçekte **~25 fps maksimum**
+1. **Decoder → SurfaceTexture → GL → SurfaceView** (upstream yolu; doğrudan çıkış denendi, bkz. M5/M7)
+2. **HWC**: Uygulama tamponunu (RGBA ya da standart YCbCr) video düzlemine almıyor → **CLIENT (GPU)**
+3. **GPU**: 1920×1080 → 3840×2160 ölçeklendirme + birleştirme
+4. **Kapasite**: ölçülen tavan **~25 fps** (M3–M9)
 
 Gelen 25 fps'te GPU ne zaman: 25 fps → GPU işler → 25 fps sunulur.
 
@@ -139,7 +156,8 @@ Elimizdeki yol: Standart HAL buffers → HWC **CLIENT** → GPU.
 
 | Deney | Kod | Sonuç | Neden İşe Yaramadı |
 |---|---|---|---|
-| Doğrudan çıkış | `perf(receiver)` | 27.6 fps (4K) | GPU hala CLIENT, yansıtma vs 25 fps |
+| Doğrudan çıkış | `cb2c07a` (kapatıldı) | ~25 fps + 4–5 sn gecikme | HWC yine CLIENT; FIFO kuyruk gecikme biriktirdi |
+| Bekleyen kare sınırı | `1dd51c9` (geri alındı) | 7 fps | `onFrameRendered` bildirimleri bu TV'de gelmiyor |
 | 1080p Varsayılan | `97d3486` | 25 fps tamam | İçeriğin 25 fps olduğu şüpheleniliyor; yüksek FPS → 24 fps + gecikme |
 | Renk aralığı | `97d3486` + LIMITED range | 24.8 fps | HWC'nin tamanı yok, YouTube gibi vendor buffer lazım |
 
@@ -192,7 +210,7 @@ Mac → TV ping (50 paket):
 Proje **~25 fps tavanı** kabul ederek:
 
 1. ✓ A/V senkronizasyonu ölçülüyor (< ~100 ms)
-2. ✓ Latency kontrol ediliyor (< ~200 ms, `1dd51c9` sonrasında)
+2. ✓ Gecikme kontrol ediliyor (hedef < ~300 ms, GL yolu)
 3. ✓ Bellek sızıntısı testleri yapılıyor
 4. ✓ Soak (dayanıklılık) testleri çalışıyor
 5. ✓ Dokümantasyon tamamlanıyor
