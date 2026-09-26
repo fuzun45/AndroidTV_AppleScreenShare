@@ -17,13 +17,18 @@ Kullanim:
 """
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import layer_select  # noqa: E402
+
 INT64_MAX = 9223372036854775807
 
+# Geriye donuk uyumluluk icin tutuluyor; --layer-regex acikca verilirse kullanilir.
 DEFAULT_LAYER_REGEX = r"SurfaceView.*tvmirror|tvmirror.*SurfaceView"
 
 NOISE_LINES = ("Init wrapper", "open mma")
@@ -51,7 +56,8 @@ def list_layers(adb, device):
     return [ln.strip() for ln in out.splitlines() if ln.strip()]
 
 
-def autodetect_layer(adb, device, layer_regex):
+def autodetect_layer_regex(adb, device, layer_regex):
+    """Eski regex tabanli algilama (yalnizca --layer-regex acikca verildiyse kullanilir)."""
     layers = list_layers(adb, device)
     pattern = re.compile(layer_regex, re.IGNORECASE)
     candidates = [ln for ln in layers if pattern.search(ln)]
@@ -61,6 +67,22 @@ def autodetect_layer(adb, device, layer_regex):
     blast = [ln for ln in candidates if "(BLAST)" in ln]
     chosen = blast[0] if blast else candidates[0]
     return chosen, layers
+
+
+def get_focus_hint(adb, device):
+    """dumpsys window'dan mCurrentFocus satirini alir (secim icin ipucu)."""
+    out = run_adb(adb, device, ["shell", "dumpsys", "window"])
+    lines = [ln for ln in out.splitlines() if "mCurrentFocus" in ln or "mFocusedApp" in ln]
+    return "\n".join(lines)
+
+
+def autodetect_layer(adb, device):
+    """tools/layer_select.py'deki oncelikli secim mantigini kullanir."""
+    list_output = run_adb(adb, device, ["shell", "dumpsys", "SurfaceFlinger", "--list"])
+    layers = [ln.strip() for ln in list_output.splitlines() if ln.strip()]
+    focus_hint = get_focus_hint(adb, device)
+    chosen, candidates = layer_select.pick_video_layer(list_output, focus_hint)
+    return chosen, candidates if candidates else layers
 
 
 def parse_latency(text):
@@ -194,8 +216,8 @@ def main():
     ap.add_argument("--device", required=True, help="adb -s <device>")
     ap.add_argument(
         "--layer-regex",
-        default=DEFAULT_LAYER_REGEX,
-        help="Katman adi icin regex (varsayilan: tvmirror SurfaceView)",
+        default=None,
+        help="Katman adi icin regex (verilirse layer_select.py yerine bu kullanilir)",
     )
     ap.add_argument("--layer", default=None, help="Katman adini otomatik algilamak yerine dogrudan ver")
     ap.add_argument("--seconds", type=float, default=20.0, help="Toplam olcum suresi (sn)")
@@ -203,16 +225,22 @@ def main():
     ap.add_argument("--json", default=None, help="Sonucu JSON olarak da yaz")
     args = ap.parse_args()
 
+    candidates = None
     if args.layer:
         layer = args.layer
-        layers = None
+    elif args.layer_regex:
+        layer, candidates = autodetect_layer_regex(args.adb, args.device, args.layer_regex)
     else:
-        layer, layers = autodetect_layer(args.adb, args.device, args.layer_regex)
-        if not layer:
-            print("HATA: Katman bulunamadi. --list ciktisi:", file=sys.stderr)
-            for ln in (layers or []):
-                print(f"  {ln}", file=sys.stderr)
-            sys.exit(1)
+        layer, candidates = autodetect_layer(args.adb, args.device)
+
+    if not layer:
+        print("HATA: Katman bulunamadi. --list ciktisi (SurfaceView adaylari):", file=sys.stderr)
+        for ln in (candidates or []):
+            print(f"  {ln}", file=sys.stderr)
+        if args.json:
+            with open(args.json, "w", encoding="utf-8") as f:
+                json.dump({"layer": None, "candidates": candidates or []}, f, ensure_ascii=False, indent=2)
+        sys.exit(1)
 
     print(f"Katman: {layer}")
     print(f"Olcum suresi: {args.seconds:.0f} sn, aralik: {args.interval:.1f} sn")

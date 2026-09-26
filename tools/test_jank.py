@@ -115,13 +115,24 @@ class TestDedupBehavior(unittest.TestCase):
 
 
 class TestLayerAutodetectRegex(unittest.TestCase):
-    def test_regex_matches_expected_layer_names(self):
+    def test_legacy_regex_still_matches_expected_layer_names(self):
+        # DEFAULT_LAYER_REGEX artik yalnizca --layer-regex acikca verildiginde
+        # kullanilan eski/geriye-donuk secenek; varsayilan yol layer_select.py'dir.
         import re
         pattern = re.compile(jank.DEFAULT_LAYER_REGEX, re.IGNORECASE)
         self.assertTrue(pattern.search(
             "SurfaceView[io.github.fuzun45.tvmirror/io.github.jqssun.airplay.MainActivity](BLAST)"
         ))
         self.assertFalse(pattern.search("SurfaceView[com.other.app/.MainActivity](BLAST)"))
+
+    def test_autodetect_layer_uses_layer_select(self):
+        # autodetect_layer artik jank.py'nin ayri regex mantigi yerine
+        # layer_select.pick_video_layer'a delege eder.
+        import layer_select
+        listing = "SurfaceView[io.github.fuzun45.tvmirror/x]@0(BLAST)#5\n"
+        chosen, candidates = layer_select.pick_video_layer(listing)
+        self.assertIn("tvmirror", chosen)
+        self.assertEqual(candidates, [listing.strip()])
 
 
 if __name__ == "__main__":

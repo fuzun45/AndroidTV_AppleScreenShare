@@ -18,7 +18,13 @@ setup_out_dir "soak-${MODE}"
 
 SOAK_MD="$OUT/SOAK.md"
 CRASH_FOUND=0
-layer_regex='SurfaceView.*tvmirror|tvmirror.*SurfaceView'
+
+# Uygulamamiza ait SurfaceView katmani var mi (stale-layer kontrolu icin).
+# --app-only: odak ipucu/tek-aday fallback'ini kullanmaz, sadece bilinen
+# paket/namespace token'lariyla eslesen adaylari sayar (bkz. tools/layer_select.py).
+app_surfaceview_layer() {
+    adbs dumpsys SurfaceFlinger --list | python3 "$REPO_ROOT/tools/layer_select.py" --app-only 2>/dev/null | head -n1
+}
 
 {
     echo "# Soak Test Sonuclari - $MODE"
@@ -48,7 +54,7 @@ case "$MODE" in
             printf 'Iphone/Mac uzerinden mirroring BASLATIN, sonra Enter tusuna basin...\n'
             read -r _
             sleep 2
-            adbs dumpsys SurfaceFlinger --list | safe_grep -qiE "$layer_regex" \
+            [ -n "$(app_surfaceview_layer)" ] \
                 && log_ok "SurfaceView katmani goruldu (mirroring aktif gorunuyor)" \
                 || log_warn "SurfaceView katmani bulunamadi (yine de devam ediliyor)"
 
@@ -60,7 +66,7 @@ case "$MODE" in
             proc_alive="EVET"; adbs pidof "$PKG" | safe_grep -q '[0-9]' || proc_alive="HAYIR"
             pss="$(app_pss_kb)"
 
-            layer_after="$(adbs dumpsys SurfaceFlinger --list | safe_grep -iE "$layer_regex" || true)"
+            layer_after="$(app_surfaceview_layer)"
             focus_after="$(adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp' | safe_grep "$PKG" || true)"
             surface_clean="EVET"
             if [ -n "$layer_after" ] || [ -n "$focus_after" ]; then

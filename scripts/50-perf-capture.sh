@@ -13,10 +13,10 @@ SECONDS_DUR="${2:-120}"
 need_device || exit 1
 setup_out_dir "perf-${LABEL}"
 
-layer_regex='SurfaceView.*tvmirror|tvmirror.*SurfaceView'
-
 mirroring_active() {
-    adbs dumpsys SurfaceFlinger --list | safe_grep -qiE "$layer_regex" && return 0
+    # Katman adi cihaza gore degisebildigi icin asil sinyal TvMirrorStats logu;
+    # SurfaceView varligi ek bir ipucu.
+    adbs dumpsys SurfaceFlinger --list | safe_grep -qi 'SurfaceView' && return 0
     adbs logcat -d -s TvMirrorStats:* -t 50 | safe_grep -q 'TvMirrorStats' && return 0
     return 1
 }
@@ -35,6 +35,18 @@ log_ok "Mirroring aktif, olcum basliyor."
 
 adbs logcat -c
 
+log_info "Video SurfaceView katmani seciliyor..."
+adbs dumpsys SurfaceFlinger --list > "$OUT/sf-list.txt"
+adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp' > "$OUT/focus.txt"
+FOCUS_TEXT="$(cat "$OUT/focus.txt")"
+python3 "$REPO_ROOT/tools/layer_select.py" --focus "$FOCUS_TEXT" < "$OUT/sf-list.txt" > "$OUT/layer.txt"
+VIDEO_LAYER="$(head -n1 "$OUT/layer.txt")"
+if [ -n "$VIDEO_LAYER" ]; then
+    log_ok "Video katmani: $VIDEO_LAYER"
+else
+    log_warn "Video katmani otomatik secilemedi, adaylar $OUT/layer.txt icinde. jank.py kendi ici secimini deneyecek."
+fi
+
 log_info "Baslangic HWC/SurfaceFlinger anlik goruntusu..."
 adbs dumpsys SurfaceFlinger > "$OUT/sf-before.txt"
 safe_grep -i 'missed' "$OUT/sf-before.txt" > "$OUT/missed-before.txt"
@@ -42,9 +54,11 @@ python3 "$REPO_ROOT/tools/hwc_layers.py" < "$OUT/sf-before.txt" > "$OUT/complaye
 
 log_info "tools/jank.py arka planda baslatiliyor (${SECONDS_DUR}sn)..."
 JANK_JSON="$OUT/jank.json"
-python3 "$REPO_ROOT/tools/jank.py" --adb "$ADB" --device "$DEV" \
-    --layer-regex "$layer_regex" --seconds "$SECONDS_DUR" --interval 1.0 \
-    --json "$JANK_JSON" > "$OUT/jank-stdout.txt" 2>&1 &
+JANK_ARGS=(--adb "$ADB" --device "$DEV" --seconds "$SECONDS_DUR" --interval 1.0 --json "$JANK_JSON")
+if [ -n "$VIDEO_LAYER" ]; then
+    JANK_ARGS+=(--layer "$VIDEO_LAYER")
+fi
+python3 "$REPO_ROOT/tools/jank.py" "${JANK_ARGS[@]}" > "$OUT/jank-stdout.txt" 2>&1 &
 JANK_PID=$!
 
 log_info "Periyodik ornekleme (5sn araliklarla) basliyor..."
@@ -82,7 +96,12 @@ log_info "TvMirrorStats logcat kaydediliyor..."
 adbs logcat -d -s TvMirrorStats:* > "$OUT/tvmirrorstats.log"
 
 log_info "Decoder secim loglari..."
-adbs logcat -d | safe_grep -iE 'DecoderSelector|MediaCodec|low-latency|vdec' | tail -n 200 > "$OUT/decoder-selection.log"
+adbs logcat -d > "$OUT/logcat-full.txt"
+safe_grep -iE 'DecoderSelector|MediaCodec|low-latency|vdec' "$OUT/logcat-full.txt" | tail -n 200 > "$OUT/decoder-selection.log"
+# HEVC/AVC secimiyle ilgili satirlar; TvMirrorStats'in saniyelik durum satirlari haric.
+safe_grep -viE 'TvMirrorStats' "$OUT/logcat-full.txt" \
+    | safe_grep -iE 'decoders: avc=|hevc decoder not whitelisted|H\.265|h265|hevc' \
+    | tail -n 20 > "$OUT/hevc-selection.log"
 
 # --- Ozet hesaplamalari ---
 extract_median_field() {
@@ -112,10 +131,69 @@ if [ -f "$JANK_JSON" ]; then
     janky_pct="$(python3 -c "import json,sys; d=json.load(open('$JANK_JSON')); print(d.get('janky_pct') if d.get('janky_pct') is not None else 'NA')" 2>/dev/null || echo NA)"
 fi
 
-# complayers-*.txt: "<TIP>\t<katman adi>" (tools/hwc_layers.py)
-video_layer_comptype="$(awk -F'\t' '$2 ~ /SurfaceView/ && $2 ~ /tvmirror/ {print $1; exit}' "$OUT/complayers-after.txt")"
+# complayers-*.txt: "<TIP>\t<katman adi>" (tools/hwc_layers.py). hwc_layers.py'nin
+# gordugu ad, VIDEO_LAYER'daki sonek/parantezleri iceremeyebilir; bu yuzden tam
+# esitlik tutmazsa birbirini icerme, o da tutmazsa ayni "#<id>" ile eslesen
+# SurfaceView satirina dusuluyor (tools/layer_select.py'deki secime paralel).
+export VIDEO_LAYER
+python3 -c '
+import os, re, sys
+
+video = os.environ.get("VIDEO_LAYER", "").strip()
+path = sys.argv[1]
+comptype_out = sys.argv[2]
+other_out = sys.argv[3]
+
+def contains_match(a, b):
+    if not a or not b:
+        return False
+    return a in b or b in a
+
+entries = []
+try:
+    with open(path, encoding="utf-8") as f:
+        for ln in f:
+            parts = ln.rstrip("\n").split("\t", 1)
+            if len(parts) == 2:
+                entries.append((parts[0], parts[1].strip()))
+except OSError:
+    pass
+
+trailing_id = None
+m = re.search(r"#(\d+)\s*$", video)
+if m:
+    trailing_id = m.group(1)
+
+matched_name = None
+comptype = "NA"
+if video:
+    for t, name in entries:
+        if name == video:
+            matched_name, comptype = name, t
+            break
+    if matched_name is None:
+        for t, name in entries:
+            if contains_match(name, video):
+                matched_name, comptype = name, t
+                break
+    if matched_name is None and trailing_id:
+        for t, name in entries:
+            if "SurfaceView" in name and name.endswith("#" + trailing_id):
+                matched_name, comptype = name, t
+                break
+
+with open(comptype_out, "w", encoding="utf-8") as f:
+    f.write(comptype + "\n")
+
+with open(other_out, "w", encoding="utf-8") as f:
+    for t, name in entries:
+        if t == "CLIENT" and name != matched_name:
+            f.write(name + "\n")
+' "$OUT/complayers-after.txt" "$OUT/video-layer-comptype.txt" "$OUT/other-client-layers.txt" 2>/dev/null || true
+
+video_layer_comptype="$(cat "$OUT/video-layer-comptype.txt" 2>/dev/null | tr -d '\n')"
 video_layer_comptype="${video_layer_comptype:-NA}"
-other_client_layers="$(awk -F'\t' '$1 == "CLIENT" && !($2 ~ /SurfaceView/ && $2 ~ /tvmirror/) {print $2}' "$OUT/complayers-after.txt")"
+other_client_layers="$(cat "$OUT/other-client-layers.txt" 2>/dev/null)"
 
 missed_before_n="$(safe_grep -m1 'HWC missed' "$OUT/missed-before.txt" | grep -oE '[0-9]+' | tail -n1)"
 missed_after_n="$(safe_grep -m1 'HWC missed' "$OUT/missed-after.txt" | grep -oE '[0-9]+' | tail -n1)"
@@ -163,12 +241,31 @@ SUMMARY="$OUT/SUMMARY.md"
     echo
     echo "## HWC Katman Durumu"
     echo
+    if [ -n "$VIDEO_LAYER" ]; then
+        echo "- Secilen video katmani: \`${VIDEO_LAYER}\`"
+    else
+        echo "- Secilen video katmani: bulunamadi (jank.py kendi ici secimini denedi, asagida adaylar)"
+        echo "\`\`\`"
+        safe_grep '^# aday:' "$OUT/layer.txt"
+        echo "\`\`\`"
+    fi
     echo "- Video katmani Comp Type: ${video_layer_comptype:-NA}"
     echo "- Diger CLIENT (GPU) katmanlari:"
     echo '```'
     echo "${other_client_layers:-yok}"
     echo '```'
     echo "- Missed frame delta: ${missed_delta}"
+    echo
+    echo "## Decoder Secimi"
+    echo
+    echo "- decoder=${decoder:-NA} (TvMirrorStats)"
+    echo "\`\`\`"
+    if [ -s "$OUT/hevc-selection.log" ]; then
+        cat "$OUT/hevc-selection.log"
+    else
+        echo "(ilgili log satiri bulunamadi)"
+    fi
+    echo '```'
     echo
     echo "## Sistem Kaynaklari"
     echo
