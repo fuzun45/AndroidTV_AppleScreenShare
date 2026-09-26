@@ -89,7 +89,8 @@ need_device() {
     return 1
 }
 
-# grep bulunamadiginda scripti durdurmasin diye kucuk yardimci
+# grep bulunamadiginda scripti durdurmasin diye kucuk yardimci. Cikis kodu
+# HER ZAMAN 0'dir: kosul (if/&&/||) icinde KULLANILMAZ, orada duz grep -q kullan.
 safe_grep() {
     grep "$@" || true
 }

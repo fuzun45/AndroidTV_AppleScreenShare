@@ -15,14 +15,14 @@ pass() { printf 'PASS - %s\n' "$1"; }
 fail() { printf 'FAIL - %s\n' "$1"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
 
 # 1) Paket kurulu mu?
-if adbs pm list packages "$PKG" | safe_grep -q "^package:$PKG$"; then
+if adbs pm list packages "$PKG" | grep -q "^package:$PKG$"; then
     pass "Paket kurulu ($PKG)"
 else
     fail "Paket kurulu degil ($PKG)"
 fi
 
 # 2) Surec calisiyor mu?
-if adbs pidof "$PKG" | safe_grep -q '[0-9]'; then
+if adbs pidof "$PKG" | grep -q '[0-9]'; then
     pass "Surec calisiyor"
 else
     fail "Surec calismiyor"
@@ -32,12 +32,12 @@ fi
 port_hex="1B58"  # 7000 decimal -> hex
 port_listening=0
 if adbs_raw 'command -v ss >/dev/null 2>&1'; then
-    if adbs ss -ltn | safe_grep -qE ':7000\b'; then port_listening=1; fi
+    if adbs ss -ltn | grep -qE ':7000\b'; then port_listening=1; fi
 elif adbs_raw 'command -v netstat >/dev/null 2>&1'; then
-    if adbs netstat -ltn | safe_grep -qE ':7000\b'; then port_listening=1; fi
+    if adbs netstat -ltn | grep -qE ':7000\b'; then port_listening=1; fi
 fi
 if [ "$port_listening" -eq 0 ]; then
-    if adbs cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | safe_grep -qi ":${port_hex} "; then
+    if adbs cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -qi ":${port_hex} "; then
         port_listening=1
     fi
 fi
@@ -56,7 +56,7 @@ check_mdns() {
         ( dns-sd -B "$svc" local. > "$out" 2>&1 & echo $! > "$out.pid" )
         sleep 6
         [ -f "$out.pid" ] && { kill "$(cat "$out.pid")" 2>/dev/null || true; rm -f "$out.pid"; }
-        if safe_grep -q 'Add' "$out"; then
+        if grep -q 'Add' "$out"; then
             pass "mDNS $svc goruluyor"
         else
             fail "mDNS $svc gorunmuyor (6sn icinde)"
@@ -91,7 +91,7 @@ fi
 # 7) Guvenlik probu: TCP baglanti odakli aktiviteyi degistiriyor mu?
 focus_before="$(adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp')"
 was_ours=0
-echo "$focus_before" | safe_grep -q "$PKG" && was_ours=1
+echo "$focus_before" | grep -q "$PKG" && was_ours=1
 
 if command -v nc >/dev/null 2>&1; then
     nc -z -w 2 "$tv_ip" 7000 >/dev/null 2>&1 || true
@@ -103,9 +103,11 @@ fi
 sleep 3
 focus_after="$(adbs dumpsys window | safe_grep -E 'mCurrentFocus|mFocusedApp')"
 is_ours_after=0
-echo "$focus_after" | safe_grep -q "$PKG" && is_ours_after=1
+echo "$focus_after" | grep -q "$PKG" && is_ours_after=1
 
-if [ "$was_ours" -eq 0 ] && [ "$is_ours_after" -eq 1 ]; then
+if [ "$was_ours" -eq 1 ]; then
+    fail "Guvenlik probu sonucsuz: uygulama zaten on planda. TV'de Home'a basip 40-verify'i tekrar calistirin"
+elif [ "$is_ours_after" -eq 1 ]; then
     fail "Guvenlik: cizgisiz TCP baglantisi uygulamayi one getirdi (onceki odakta yoktu, sonra oldu)"
 else
     pass "Guvenlik: TCP probu odagi degistirmedi"

@@ -16,8 +16,8 @@ setup_out_dir "perf-${LABEL}"
 mirroring_active() {
     # Katman adi cihaza gore degisebildigi icin asil sinyal TvMirrorStats logu;
     # SurfaceView varligi ek bir ipucu.
-    adbs dumpsys SurfaceFlinger --list | safe_grep -qi 'SurfaceView' && return 0
-    adbs logcat -d -s TvMirrorStats:* -t 50 | safe_grep -q 'TvMirrorStats' && return 0
+    adbs dumpsys SurfaceFlinger --list | grep -qi 'SurfaceView' && return 0
+    adbs logcat -d -s TvMirrorStats:* -t 50 | grep -q 'TvMirrorStats' && return 0
     return 1
 }
 
@@ -351,7 +351,7 @@ SUMMARY="$OUT/SUMMARY.md"
     echo "audio    : ${audio:-NA}"
     echo "output   : ${out_paths:-NA} (codec cikis yolu, saniye sayisi)"
     echo "\`\`\`"
-    if echo "$dec_fps_med" | safe_grep -qE '^[0-9]+(\.[0-9]+)?$' && echo "$presented_fps" | safe_grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+    if echo "$dec_fps_med" | grep -qE '^[0-9]+(\.[0-9]+)?$' && echo "$presented_fps" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
         drop_pct="$(awk -v d="$dec_fps_med" -v p="$presented_fps" 'BEGIN{ if (d > 0 && p < 0.9*d) printf "%.0f", (1-p/d)*100; else print "" }')"
         if [ -n "$drop_pct" ]; then
             echo

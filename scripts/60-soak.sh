@@ -75,7 +75,7 @@ case "$MODE" in
             sleep 3
 
             no_crash="EVET"; check_crash "cycle$i" || { no_crash="HAYIR"; CRASH_FOUND=1; }
-            proc_alive="EVET"; adbs pidof "$PKG" | safe_grep -q '[0-9]' || proc_alive="HAYIR"
+            proc_alive="EVET"; adbs pidof "$PKG" | grep -q '[0-9]' || proc_alive="HAYIR"
             pss="$(app_pss_kb)"
 
             layer_after="$(app_surfaceview_layer)"
@@ -131,14 +131,14 @@ case "$MODE" in
             sleep 30
 
             svc_ok="HAYIR"
-            adbs dumpsys activity services "$PKG" | safe_grep -q "$SERVICE_CLASS" && svc_ok="EVET"
+            adbs dumpsys activity services "$PKG" | grep -q "$SERVICE_CLASS" && svc_ok="EVET"
 
             port_ok="HAYIR"
             if adbs_raw 'command -v ss >/dev/null 2>&1'; then
-                adbs ss -ltn | safe_grep -qE ':7000\b' && port_ok="EVET"
+                adbs ss -ltn | grep -qE ':7000\b' && port_ok="EVET"
             fi
             if [ "$port_ok" = "HAYIR" ]; then
-                adbs cat /proc/net/tcp 2>/dev/null | safe_grep -qi ':1B58 ' && port_ok="EVET"
+                adbs cat /proc/net/tcp 2>/dev/null | grep -qi ':1B58 ' && port_ok="EVET"
             fi
 
             result="OK"

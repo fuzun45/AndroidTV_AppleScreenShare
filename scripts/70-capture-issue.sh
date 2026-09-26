@@ -42,18 +42,18 @@ get_proc_info() {
 check_port_7000() {
     port_hex="1B58"  # 7000 decimal -> hex
     if adbs_raw 'command -v ss >/dev/null 2>&1'; then
-        if adbs ss -ltn | safe_grep -qE ':7000\b'; then
+        if adbs ss -ltn | grep -qE ':7000\b'; then
             printf 'dinleniyor (ss)\n'
             return
         fi
     fi
     if adbs_raw 'command -v netstat >/dev/null 2>&1'; then
-        if adbs netstat -ltn | safe_grep -qE ':7000\b'; then
+        if adbs netstat -ltn | grep -qE ':7000\b'; then
             printf 'dinleniyor (netstat)\n'
             return
         fi
     fi
-    if adbs cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | safe_grep -qi ":${port_hex} "; then
+    if adbs cat /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -qi ":${port_hex} "; then
         printf 'dinleniyor (/proc/net/tcp)\n'
         return
     fi

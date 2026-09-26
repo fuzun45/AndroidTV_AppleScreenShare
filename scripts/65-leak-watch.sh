@@ -67,7 +67,7 @@ sf_layer_info() {
     else
         sf_layers=0
     fi
-    if printf '%s\n' "$app_lines" | safe_grep -qi 'surfaceview'; then
+    if printf '%s\n' "$app_lines" | grep -qi 'surfaceview'; then
         mirroring=1
     else
         mirroring=0
@@ -119,7 +119,7 @@ while [ "$elapsed" -lt "$TOTAL_SECONDS" ]; do
         threads="$(printf '%s\n' "$status" | safe_grep -E '^Threads:' | tr -s ' ' | cut -d' ' -f2)"
 
         fd_raw="$(adbs "ls /proc/$pid/fd 2>&1" 2>/dev/null)"
-        if printf '%s\n' "$fd_raw" | safe_grep -qi 'permission denied'; then
+        if printf '%s\n' "$fd_raw" | grep -qi 'permission denied'; then
             fds="NA"
         else
             fds="$(printf '%s\n' "$fd_raw" | safe_grep -c '^[0-9][0-9]*$')"
