@@ -43,11 +43,18 @@ etkisi `in_fps` dalgalanması ve `presented` jank'ıyla ölçülecek; tek başı
 - TV native AirPlay yayınlamıyor (`_airplay._tcp`'de yalnızca Mac görünüyor).
 - Port 7000 boş; Cast portları (8008/8009/8443) dinlemede.
 
-## Video decoder'ları
+## Video decoder'ları (media_codecs XML, 2. baseline)
 
-- `OMX.MS.AVC.Decoder` donanım AVC decoder'ı var.
-- HEVC donanım decoder'ı ve boyut/fps sınırları ilk baseline özetine düşmedi; `10-baseline.sh` düzeltildi.
-- Kesin bilgi ilk yansıtmada `TvMirrorStats decoder=...` satırından gelecek.
+| Decoder | Maks. boyut | Performance point | Ölçülen fps | Özellikler |
+|---|---|---|---|---|
+| `OMX.MS.HEVC.Decoder` | 4096x2176 | 3840x2160@60 | 1080p: 393, **2160p: 84** | adaptive, **low-latency**, tunneled |
+| `OMX.MS.AVC.Decoder` | 4096x2304 | 3840x2160@60 | 1080p: 192 | adaptive, **low-latency**, tunneled |
+| `c2.android.avc/hevc` (yazılım) | 2048x2048 | – | 1080p: 13 / 28 | yalnızca yedek, gerçek zamanlı değil |
+
+Sonuç:
+- Donanım decoder'ları 4K60 HEVC/AVC'yi rahatça karşılıyor; decoder darboğaz beklenmiyor.
+- Yazılım yedeğine düşmek bu TV'de kullanılamaz sonuç verir (1080p'de 13–28 fps). Logda `decoder=c2.android.*` görülürse bu hata sayılır.
+- Asıl şüpheli, upstream'in her kareyi GL ile SurfaceView'a çizmesi (4K'da zayıf GPU). Audit adımında ölçülecek.
 
 ## HWC
 
