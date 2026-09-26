@@ -10,3 +10,5 @@ local.properties
 *.keystore
 # Cihazdan toplanan ham ölçüm çıktıları (özet raporlar devices/ altında commit'lenir)
 out/
+__pycache__/
+*.pyc
