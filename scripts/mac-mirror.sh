@@ -106,9 +106,18 @@ on deviceState(tv)
 				if r is "AXCheckBox" or r is "AXDisclosureTriangle" then
 					set t to my descOf(el)
 					if t contains "screen-mirroring-device-" then
+						-- Acik cihaz bazen ucgen, bazen value=1 kutu olarak gorunur
+						set cv to 0
 						if r is "AXCheckBox" then
+							try
+								set cv to (value of el) as integer
+							end try
+						end if
+						if r is "AXCheckBox" and cv is 0 then
+							set onOff to "off"
 							set end of devBoxes to el
 						else
+							set onOff to "on"
 							set end of devTris to el
 						end if
 						try
@@ -117,21 +126,34 @@ on deviceState(tv)
 						try
 							set t to t & " | " & ((help of el) as text)
 						end try
-						if t contains tv then set matchedDev to {r, el}
+						if t contains tv then set matchedDev to {onOff, el}
 					end if
 				end if
 			end repeat
 		end repeat
 	end tell
 	if matchedDev is not missing value then
-		if (item 1 of matchedDev) is "AXDisclosureTriangle" then return {"on", item 2 of matchedDev}
-		return {"off", item 2 of matchedDev}
+		return matchedDev
 	end if
-	if (count of devTris) is 1 and (count of devBoxes) is 0 then return {"on", item 1 of devTris}
+	if (count of devTris) ≥ 1 and (count of devBoxes) is 0 then return {"on", item 1 of devTris}
 	if (count of devBoxes) is 1 and (count of devTris) is 0 then return {"off", item 1 of devBoxes}
 	my closePanel()
 	error "'" & tv & "' secilemedi: " & (count of devBoxes) & " kapali + " & (count of devTris) & " acik cihaz (probe ciktisini gonderin)"
 end deviceState
+
+-- Panel gec acilabilir ya da cihaz listesi (durdurduktan hemen sonra) bir
+-- sure bos gelebilir: 6 kez, 2 sn arayla yeniden denenir.
+on stateWithRetry(tv)
+	repeat with tryNo from 1 to 6
+		try
+			return my deviceState(tv)
+		on error errMsg
+			my closePanel()
+			if tryNo is 6 then error errMsg
+			delay 2
+		end try
+	end repeat
+end stateWithRetry
 
 on run argv
 	set act to item 1 of argv
@@ -174,7 +196,7 @@ on run argv
 		return out
 	end if
 
-	set devState to my deviceState(tv)
+	set devState to my stateWithRetry(tv)
 	if act is "start" then
 		if (item 1 of devState) is "on" then
 			my closePanel()
@@ -183,6 +205,11 @@ on run argv
 		tell application "System Events" to click (item 2 of devState)
 		delay 0.5
 		my closePanel()
+		-- dogrula: baglanti birkac saniye surebilir
+		delay 3
+		set devState2 to my stateWithRetry(tv)
+		my closePanel()
+		if (item 1 of devState2) is "off" then error "start dogrulanamadi: tiklamadan sonra yansitma baslamadi"
 		return "start tamam (" & tv & ")"
 	end if
 	-- stop
@@ -195,7 +222,7 @@ on run argv
 	my closePanel()
 	-- dogrula: panel yeniden acilip durum okunur
 	delay 2
-	set devState2 to my deviceState(tv)
+	set devState2 to my stateWithRetry(tv)
 	my closePanel()
 	if (item 1 of devState2) is "on" then error "stop dogrulanamadi: tiklamadan sonra hala yansitiliyor (probe ciktisini gonderin)"
 	return "stop tamam (" & tv & ")"
