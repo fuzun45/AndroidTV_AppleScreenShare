@@ -108,8 +108,11 @@ CI'da `RELEASE_KEYSTORE_B64` secret'ı tanımlı değilse APK, her GitHub makine
 Anahtarı Mac'te bir kez üret ve GitHub'a secret olarak ekle:
 
 ```bash
-keytool -genkeypair -keystore ~/tvmirror-release.jks -alias tvmirror \
+# macOS'taki /usr/bin/keytool yalnızca bir yönlendirici; Homebrew openjdk@21 PATH'te
+# değilse "Unable to locate a Java Runtime" verir. Tam yol kullanılır:
+/opt/homebrew/opt/openjdk@21/bin/keytool -genkeypair -keystore ~/tvmirror-release.jks -alias tvmirror \
   -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=TV Mirror"
+# (yol yoksa: ls /opt/homebrew/opt | grep -i jdk ; hiç JDK yoksa: brew install openjdk@21)
 base64 -i ~/tvmirror-release.jks | pbcopy   # panoya kopyalar
 ```
 
