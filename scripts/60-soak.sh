@@ -4,6 +4,8 @@
 #   60-soak.sh connect-cycles N
 #   60-soak.sh boot-cycles N
 #   60-soak.sh long <dakika>
+# Not: Bellek/kaynak sizintisi icin bu scripti 65-leak-watch.sh ile paralel
+# calistirabilirsiniz (bkz. scripts/65-leak-watch.sh basindaki kullanim notlari).
 set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 # shellcheck source=lib/common.sh
