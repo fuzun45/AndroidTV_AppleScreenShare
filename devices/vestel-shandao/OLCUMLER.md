@@ -175,3 +175,17 @@ Mac ekranı ve TV aynı fotoğraf karesinde (sayaçta saniye ve salise hanesi):
 - **Neden:** "Bağlanınca uygulamayı aç" (varsayılan açık) arka plandan activity başlatmak için Android 10+ `SYSTEM_ALERT_WINDOW` izni istiyor. İzin her kaldır-kur işleminde sıfırlanıyor ve TV'de ayar ekranı yok.
 - **Çözüm:** `30-install.sh` izni adb ile veriyor, `40-verify.sh` izni kontrol ediyor. Uygulama kodu değişmedi.
 - **Doğrulandı (kullanıcı):** izin verildikten sonra TV kapatılıp açıldı; uygulama açılmadan Mac'ten yansıtılınca görüntü kendiliğinden ekrana geldi.
+
+## Son kod incelemesi (receiver, c8defdd → HEAD, 2026-09-26)
+
+Canlı GL görüntü yolunda, yüzeyin servise iletilmesinde ve bayat kare temizliğinde hata bulunmadı. Bulgular ve yapılanlar:
+
+| bulgu | durum |
+|---|---|
+| MirrorStats saniyelik `dropped` değeri süreç başından birikiyordu | düzeltildi: oturum başına |
+| Decoder durunca istatistik satırı basılmıyordu (yalnızca çıkışta tetikleniyordu) | düzeltildi: giriş tarafından da tetikleniyor |
+| İlk ölçüm penceresi ilk çıkış karesinde başlıyordu; duvar saati kullanılıyordu | düzeltildi: pencere oturum başında başlıyor, `elapsedRealtime` kullanılıyor |
+| Release anahtarı yoksa her CI makinesi farklı debug anahtarıyla imzalıyor | belgelendi: KURULUM "Sabit İmza Anahtarı" (secret kullanıcı tarafından eklenir) |
+| Kapalı doğrudan çıkış kodu (`DIRECT_OUTPUT=false`) ölü kod olarak duruyor | bilinçli: tüm yolları bayrakla kapalı, çalışma zamanında etkisi yok; M5/M7 kaydı ve ileride tünelli oynatma denemesi için korunuyor |
+| MirrorStats ile upstream BENCHMARK satırı birbirini tekrar ediyor | bilinçli: ölçüm araçları TvMirrorStats biçimine bağlı |
+| 1080p/30 varsayılanı bu TV'ye özgü | bilinçli: bu depo bu TV için; ölçüm dayanağı M3–M9 |

@@ -1,5 +1,6 @@
 package io.github.jqssun.airplay.renderer
 
+import android.os.SystemClock
 import android.util.Log
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
@@ -70,7 +71,9 @@ object MirrorStats {
         sessionFramesOutBase = framesOut.get()
         sessionDroppedBase = dropped.get()
         sessionStartNs = System.nanoTime()
-        lastEmitMs = 0L
+        // the first window starts with the session (not the first decoded frame) so the
+        // first in_fps/dec_fps line isn't inflated by frames queued during decoder warm-up
+        lastEmitMs = SystemClock.elapsedRealtime()
         lastFramesIn = sessionFramesInBase
         lastFramesOut = sessionFramesOutBase
         sessionActive = true
@@ -93,6 +96,8 @@ object MirrorStats {
     fun onFrameIn() {
         if (!ENABLED) return
         framesIn.incrementAndGet()
+        // also emit from the input side: a decoder stall must show as dec_fps=0, not a gap
+        _maybeEmit()
     }
 
     // a decoded output buffer was released for rendering (releaseOutputBuffer)
@@ -108,8 +113,11 @@ object MirrorStats {
         dropped.incrementAndGet()
     }
 
+    // called from the input and output paths; monotonic clock (immune to NTP steps)
+    @Synchronized
     private fun _maybeEmit() {
-        val now = System.currentTimeMillis()
+        if (!sessionActive) return
+        val now = SystemClock.elapsedRealtime()
         if (lastEmitMs == 0L) {
             lastEmitMs = now
             return
@@ -126,7 +134,7 @@ object MirrorStats {
         lastEmitMs = now
         Log.i(TAG, "req=${reqW}x${reqH}@$reqFps recv=${recvW}x${recvH} codec=$codecLabel " +
             "decoder=$decoderName in_fps=${String.format(Locale.US, "%.1f", inFps)} " +
-            "dec_fps=${String.format(Locale.US, "%.1f", decFps)} dropped=${dropped.get()} audio=$audioLabel " +
+            "dec_fps=${String.format(Locale.US, "%.1f", decFps)} dropped=${dropped.get() - sessionDroppedBase} audio=$audioLabel " +
             "out=$outputLabel")
     }
 }

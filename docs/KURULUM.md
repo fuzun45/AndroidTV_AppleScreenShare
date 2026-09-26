@@ -98,6 +98,33 @@ APK yolu vermezsen script en yeni `tvmirror-*.zip`'i `~/Downloads/`'de arar:
 ./scripts/30-install.sh
 ```
 
+## Sabit İmza Anahtarı (bir kez, önerilir)
+
+CI'da `RELEASE_KEYSTORE_B64` secret'ı tanımlı değilse APK, her GitHub makinesinde yeniden üretilen bir debug anahtarıyla imzalanır. Bu durumda her güncellemede şunlar olur:
+- `adb install -r` `INSTALL_FAILED_UPDATE_INCOMPATIBLE` hatası verir, kaldır-kur gerekir.
+- Uygulama ayarları silinir.
+- "Bağlanınca ekrana gel" izni (`SYSTEM_ALERT_WINDOW`) sıfırlanır. `30-install.sh` bu izni yeniden verir.
+
+Anahtarı Mac'te bir kez üret ve GitHub'a secret olarak ekle:
+
+```bash
+keytool -genkeypair -keystore ~/tvmirror-release.jks -alias tvmirror \
+  -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=TV Mirror"
+base64 -i ~/tvmirror-release.jks | pbcopy   # panoya kopyalar
+```
+
+GitHub → depo → Settings → Secrets and variables → Actions → New repository secret:
+
+| Ad | Değer |
+|---|---|
+| `RELEASE_KEYSTORE_B64` | panodaki base64 metin |
+| `RELEASE_STORE_PASSWORD` | keytool'a verdiğin parola |
+| `RELEASE_KEY_ALIAS` | `tvmirror` |
+| `RELEASE_KEY_PASSWORD` | keytool'a verdiğin parola (anahtar parolası ayrı sorulmadıysa aynısı) |
+
+- Sonraki ilk kurulumda bir kez daha kaldır-kur gerekir, çünkü imza değişiyor. Ondan sonraki tüm güncellemeler `adb install -r` ile ayarlar korunarak kurulur.
+- `~/tvmirror-release.jks` dosyasını ve parolayı sakla; depoya ekleme.
+
 ## Kurulumu Doğrula
 
 ```bash
