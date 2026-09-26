@@ -125,37 +125,45 @@ on run argv
 		return out
 	end if
 
-	set w to my openMirroringPanel()
+	my openMirroringPanel()
 	-- Cihaz kutulari: AXIdentifier "screen-mirroring-device-<id>". Ad kutunun
-	-- kendisinde olmayabilir (macOS 15), bu yuzden once baslik/yardim metninde
-	-- TV adi aranir; listede tek cihaz varsa o secilir.
+	-- kendisinde olmayabilir, bu yuzden once baslik/yardim metninde TV adi
+	-- aranir; listede tek cihaz varsa o secilir. Ogeler probe ile ayni yoldan
+	-- (process > window > entire contents, indeksle) okunur.
 	set target to missing value
-	set devices to {}
-	tell application "System Events"
-		repeat with el in (entire contents of w)
-			try
-				if ((role of el) as text) is "AXCheckBox" and (my descOf(el)) contains "screen-mirroring-device-" then
-					set end of devices to (contents of el)
+	set firstDev to missing value
+	set nDev to 0
+	set nBox to 0
+	tell application "System Events" to tell application process "ControlCenter"
+		repeat with wi from 1 to (count of windows)
+			set items_ to entire contents of window wi
+			repeat with k from 1 to (count of items_)
+				set el to item k of items_
+				set r to ""
+				try
+					set r to (role of el) as text
+				end try
+				if r is "AXCheckBox" then
+					set nBox to nBox + 1
+					set t to my descOf(el)
+					if t contains "screen-mirroring-device-" then
+						set nDev to nDev + 1
+						if firstDev is missing value then set firstDev to el
+						try
+							set t to t & " | " & ((value of attribute "AXTitle" of el) as text)
+						end try
+						try
+							set t to t & " | " & ((help of el) as text)
+						end try
+						if t contains tv then set target to el
+					end if
 				end if
-			end try
+			end repeat
 		end repeat
-		repeat with el in devices
-			set t to my descOf(el)
-			try
-				set t to t & " | " & ((value of attribute "AXTitle" of el) as text)
-			end try
-			try
-				set t to t & " | " & ((help of el) as text)
-			end try
-			if t contains tv then
-				set target to (contents of el)
-				exit repeat
-			end if
-		end repeat
-		if target is missing value and (count of devices) is 1 then set target to item 1 of devices
+		if target is missing value and nDev is 1 then set target to firstDev
 		if target is missing value then
 			my closePanel()
-			error "'" & tv & "' secilemedi: listede " & (count of devices) & " cihaz var (TV acik mi? coklu cihazda probe ciktisini gonderin)"
+			error "'" & tv & "' secilemedi: " & nDev & " cihaz / " & nBox & " kutu bulundu (probe ciktisini gonderin)"
 		end if
 		set cur to 0
 		try
