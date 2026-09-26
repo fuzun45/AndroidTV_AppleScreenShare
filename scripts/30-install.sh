@@ -10,26 +10,44 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
 . "$SCRIPT_DIR/lib/common.sh"
 
 APK_PATH=""
-if [ "${1:-}" = "--from-artifact" ]; then
-    dir="${2:-}"
-    [ -n "$dir" ] || die "--from-artifact icin bir dizin belirtin"
-    APK_PATH="$(find "$dir" -iname 'tvmirror.apk' -print 2>/dev/null | head -n1)"
-    [ -n "$APK_PATH" ] || die "$dir altinda tvmirror.apk bulunamadi"
-elif [ -n "${1:-}" ]; then
-    APK_PATH="$1"
-else
-    log_info "APK yolu verilmedi, ~/Downloads altinda en yeni tvmirror.apk araniyor..."
-    # Safari artifact zip'ini genelde kendisi acar; acmadiysa en yeni zip'i burada ac.
-    if [ -z "$(find "$HOME/Downloads" -iname 'tvmirror.apk' -print 2>/dev/null | head -n1)" ]; then
-        zip_path="$(ls -t "$HOME"/Downloads/tvmirror-*.zip 2>/dev/null | head -n1)"
-        if [ -n "$zip_path" ]; then
-            log_info "Zip aciliyor: $zip_path"
-            unzip -o -q "$zip_path" -d "${zip_path%.zip}" || die "Zip acilamadi: $zip_path"
-        fi
+
+# Zip, klasör veya APK yolundan kurulacak tvmirror.apk'yı bulur. Zip her seferinde yeniden
+# açılır: aynı adlı eski bir klasör yeni sürümü gölgelemesin.
+apk_from() {
+    src="$1"
+    case "$src" in
+        *.zip)
+            [ -f "$src" ] || die "Zip bulunamadi: $src"
+            dest="${src%.zip}"
+            log_info "Zip aciliyor: $src"
+            unzip -o -q "$src" -d "$dest" || die "Zip acilamadi: $src"
+            src="$dest"
+            ;;
+    esac
+    if [ -d "$src" ]; then
+        find "$src" -iname 'tvmirror.apk' -print 2>/dev/null | head -n1
+    else
+        echo "$src"
     fi
-    APK_PATH="$(find "$HOME/Downloads" -iname 'tvmirror.apk' -print 2>/dev/null | xargs -I{} stat -f '%m %N' {} 2>/dev/null | sort -rn | head -n1 | cut -d' ' -f2-)"
-    [ -n "$APK_PATH" ] || die "~/Downloads altinda tvmirror.apk bulunamadi, lutfen APK yolunu argument olarak verin"
+}
+
+if [ "${1:-}" = "--from-artifact" ]; then
+    [ -n "${2:-}" ] || die "--from-artifact icin bir zip veya dizin belirtin"
+    APK_PATH="$(apk_from "$2")"
+    [ -n "$APK_PATH" ] || die "$2 altinda tvmirror.apk bulunamadi"
+elif [ -n "${1:-}" ]; then
+    APK_PATH="$(apk_from "$1")"
+else
+    # Açılmış APK'ların dosya tarihi zip'teki eski tarihi taşır; en yeni sürümü indirme
+    # tarihine göre, yani en yeni zip'ten seç.
+    log_info "APK yolu verilmedi, ~/Downloads altinda en yeni tvmirror-*.zip araniyor..."
+    zip_path="$(ls -t "$HOME"/Downloads/tvmirror-*.zip 2>/dev/null | head -n1)"
+    [ -n "$zip_path" ] || die "~/Downloads altinda tvmirror-*.zip bulunamadi; APK, zip veya klasor yolunu argument olarak verin"
+    APK_PATH="$(apk_from "$zip_path")"
 fi
+
+# Artifact adı derlendiği commit'i taşır: tvmirror-<sha>
+BUILD_SHA="$(echo "$APK_PATH" | grep -oE 'tvmirror-[0-9a-f]{7,40}' | head -n1 | sed 's/tvmirror-//')"
 
 [ -f "$APK_PATH" ] || die "APK bulunamadi: $APK_PATH"
 log_info "APK: $APK_PATH"
@@ -79,3 +97,8 @@ adbs am start -n "$PKG/$MAIN_ACTIVITY_CLASS"
 
 log_info "Kurulu versiyon:"
 adbs dumpsys package "$PKG" | safe_grep 'versionName'
+if [ -n "$BUILD_SHA" ]; then
+    log_ok "Kurulan derleme: commit ${BUILD_SHA}"
+    mkdir -p "$REPO_ROOT/out"
+    printf '%s\t%s\t%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$BUILD_SHA" "$APK_PATH" >> "$REPO_ROOT/out/installed.tsv"
+fi
