@@ -220,6 +220,22 @@ class TestRestartsAndLmk(unittest.TestCase):
 
 
 class TestEmptyInput(unittest.TestCase):
+    def test_shifted_row_with_embedded_tab_is_skipped(self):
+        # Eski 65-leak-watch "Threads:\t30" yaziyordu: fazladan sekme sutunlari
+        # kaydirip PID degisimi / LMK / MemAvailable'i yanlis okutuyordu.
+        good = [_row(i * 60, pss=40000, native=7000, graphics=6000, threads=30) for i in range(10)]
+        bad = _row(700, pss=40000, native=7000, graphics=6000, threads=30).replace("\t30\t", "\tThreads:\t30\t", 1)
+        path = write_tsv(good + [bad])
+        try:
+            rows = leak_trend.parse_tsv(path)
+            self.assertEqual(len(rows), 10)
+            self.assertEqual(leak_trend.SKIPPED_ROWS, 1)
+            analysis = leak_trend.analyze(rows)
+            self.assertEqual(analysis["restarts"], 0)
+            self.assertIn("1 satir atlandi", leak_trend.render_markdown(analysis))
+        finally:
+            os.unlink(path)
+
     def test_empty_file(self):
         path = write_tsv([])
         try:

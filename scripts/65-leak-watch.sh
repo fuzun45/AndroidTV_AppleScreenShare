@@ -86,8 +86,11 @@ check_crash_on_restart() {
     adbs logcat -d -b crash > "$OUT/crash-buffer-restart-$n.txt" 2>&1 || true
 }
 
+# Yalnizca BIZIM surecimizin LMK/am_kill ile oldurulmesi sayilir; baska
+# (onbellekteki) uygulamalarin oldurulmesi 1.78 GB TV'de olagan ve sizinti
+# gostergesi degil.
 lmk_kill_count() {
-    adbs logcat -d -b events 2>/dev/null | safe_grep -Eic 'am_kill|lowmemorykiller|lmk'
+    adbs logcat -d -b events 2>/dev/null | grep -Ei 'am_kill|lowmemorykiller' | grep -c "$PKG" || true
 }
 
 elapsed=0
@@ -116,7 +119,8 @@ while [ "$elapsed" -lt "$TOTAL_SECONDS" ]; do
         graphics="$(extract_kb "$mem" 'Graphics:')"
 
         status="$(adbs cat "/proc/$pid/status" 2>/dev/null)"
-        threads="$(printf '%s\n' "$status" | safe_grep -E '^Threads:' | tr -s ' ' | cut -d' ' -f2)"
+        # /proc/<pid>/status alanlari SEKME ile ayrilir ("Threads:\t30")
+        threads="$(printf '%s\n' "$status" | awk '/^Threads:/{print $2; exit}')"
 
         fd_raw="$(adbs "ls /proc/$pid/fd 2>&1" 2>/dev/null)"
         if printf '%s\n' "$fd_raw" | grep -qi 'permission denied'; then
@@ -148,6 +152,19 @@ while [ "$elapsed" -lt "$TOTAL_SECONDS" ]; do
     pswpout="$(printf '%s\n' "$vmstat" | safe_grep '^pswpout ' | cut -d' ' -f2)"
 
     lmk_total="$(lmk_kill_count)"
+
+    # TSV butunlugu: her alan tek bir sayi (ya da NA) olmali; sekme/\r/bosluk
+    # iceren ya da sayi olmayan degerler sutunlari kaydirmasin diye NA yapilir.
+    num() {
+        local v; v="$(printf '%s' "$1" | tr -d '\r\t ')"
+        case "$v" in ''|*[!0-9]*) echo NA ;; *) echo "$v" ;; esac
+    }
+    pid="$(num "${pid:-}")"; pss_total="$(num "${pss_total:-}")"; java_heap="$(num "${java_heap:-}")"
+    native_heap="$(num "${native_heap:-}")"; graphics="$(num "${graphics:-}")"; threads="$(num "${threads:-}")"
+    fds="$(num "${fds:-}")"; codecs="$(num "${codecs:-}")"; sf_layers="$(num "${sf_layers:-}")"
+    mem_avail="$(num "${mem_avail:-}")"; swap_free="$(num "${swap_free:-}")"; pswpin="$(num "${pswpin:-}")"
+    pswpout="$(num "${pswpout:-}")"; lmk_total="$(num "${lmk_total:-}")"
+    [ "$pid" = "NA" ] && pid=""
 
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
         "$ts" "$PHASE" "${pid:-NA}" "${pss_total:-NA}" "${java_heap:-NA}" "${native_heap:-NA}" "${graphics:-NA}" \

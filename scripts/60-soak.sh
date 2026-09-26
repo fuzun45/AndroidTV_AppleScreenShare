@@ -90,26 +90,30 @@ mac_mirror() {
     return "$rc"
 }
 
-# Alicinin cevrim icindeki olaylari (logcat temizlenmez; cevrim basindaki
-# cihaz saatinden sonrasi okunur).
-dev_now() { adbs date '+%m-%d %H:%M:%S.000' | tr -d '\r'; }
+# Alicinin olaylari: logcat temizlenmez; verilen cihaz saatinden (epoch sn)
+# sonrasi okunur. Epoch bicimi bosluk icermez; "MM-DD hh:mm:ss" adb shell'de
+# iki argumana bolunup filtre sanildigi icin hic satir dondurmuyordu.
+dev_now() { adbs date +%s | tr -dc '0-9'; }
+log_since() { adbs logcat -d -T "${1}.000" 2>/dev/null; }
+count_in() { printf '%s\n' "$1" | grep -c "$2" || true; }
 cycle_events() {
     local log
-    log="$(adbs logcat -d -T "$1" 2>/dev/null)"
+    log="$(log_since "$1")"
     printf 'conn=%s disc=%s codec=%s' \
-        "$(printf '%s\n' "$log" | grep -c 'Client connected')" \
-        "$(printf '%s\n' "$log" | grep -c 'Client disconnected')" \
-        "$(printf '%s\n' "$log" | grep -c 'Video codec started')"
+        "$(count_in "$log" 'Client connected')" \
+        "$(count_in "$log" 'Client disconnected')" \
+        "$(count_in "$log" 'Video codec started')"
 }
+ev_get() { printf '%s\n' "$1" | sed -n "s/.*$2=\([0-9]*\).*/\1/p"; }
 
 case "$MODE" in
     connect-cycles)
         N="${ARG:-1}"
         if [ "$AUTO" = "1" ]; then
-            echo "Mod: otomatik (mac-mirror.sh), HOLD_SEC=$HOLD_SEC AUTO_GAP_SEC=$AUTO_GAP_SEC" >> "$SOAK_MD"
+            echo "Mod: otomatik. Gercek durum TV'den okunur (video katmani + alici logu); Mac'e mac-mirror.sh click ile tiklanir. HOLD_SEC=$HOLD_SEC AUTO_GAP_SEC=$AUTO_GAP_SEC" >> "$SOAK_MD"
             echo >> "$SOAK_MD"
         fi
-        echo "| # | Mac start | Katman (sn) | Mac stop | Kaybolma (sn) | Alici olaylari | ANR/FATAL yok | Surec canli | PSS(KB) | Sonuc |" >> "$SOAK_MD"
+        echo "| # | Baslat | Katman (sn) | Durdur | Kaybolma (sn) | Alici olaylari | ANR/FATAL yok | Surec canli | PSS(KB) | Sonuc |" >> "$SOAK_MD"
         echo "|---|---|---|---|---|---|---|---|---|---|" >> "$SOAK_MD"
         i=1
         while [ "$i" -le "$N" ]; do
@@ -117,8 +121,17 @@ case "$MODE" in
             t0="$(dev_now)"
             start_st="elle"; stop_st="elle"
             if [ "$AUTO" = "1" ]; then
-                mac_mirror start && start_st="OK" || start_st="HATA"
-                t_up="$(wait_layer present 25)"
+                if [ -n "$(app_surfaceview_layer)" ]; then
+                    start_st="zaten-acik"; t_up=0
+                else
+                    mac_mirror click; start_st="tik"
+                    t_up="$(wait_layer present 25)"
+                    if [ "$t_up" = "-" ]; then
+                        log_warn "Katman gelmedi, Mac'e bir kez daha tiklaniyor"
+                        mac_mirror click; start_st="tik x2"
+                        t_up="$(wait_layer present 25)"
+                    fi
+                fi
             else
                 printf 'Iphone/Mac uzerinden mirroring BASLATIN, sonra Enter tusuna basin...\n'
                 read -r _
@@ -128,10 +141,21 @@ case "$MODE" in
                 && log_ok "SurfaceView katmani goruldu (${t_up} sn)" \
                 || log_warn "SurfaceView katmani bulunamadi (yine de devam ediliyor)"
 
+            t1="$(dev_now)"
             if [ "$AUTO" = "1" ]; then
                 sleep "$HOLD_SEC"
-                mac_mirror stop && stop_st="OK" || stop_st="HATA"
+                t1="$(dev_now)"
+                mac_mirror click; stop_st="tik"
                 t_down="$(wait_layer absent 10)"
+                if [ "$t_down" = "-" ]; then
+                    # Alici kopmayi gormediyse Mac birakmamistir: bir kez daha tikla.
+                    # Gorduyse ikinci tik yansitmayi yeniden baslatir; tiklanmaz.
+                    if [ "$(ev_get "$(cycle_events "$t1")" disc)" = "0" ]; then
+                        log_warn "Alici kopma gormedi, Mac'e bir kez daha tiklaniyor"
+                        mac_mirror click; stop_st="tik x2"
+                        t_down="$(wait_layer absent 10)"
+                    fi
+                fi
             else
                 printf 'Simdi mirroring DURDURUN, sonra Enter tusuna basin...\n'
                 read -r _
@@ -139,28 +163,32 @@ case "$MODE" in
             fi
             sleep 2
             events="$(cycle_events "$t0")"
+            stop_events="$(cycle_events "$t1")"
 
             no_crash="EVET"; check_crash "cycle$i" || { no_crash="HAYIR"; CRASH_FOUND=1; }
             proc_alive="EVET"; [ -n "$(app_pid)" ] || proc_alive="HAYIR"
             pss="$(app_pss_kb)"
 
             layer_after="$(app_surfaceview_layer)"
-            printf '%s\t%s\t%s\n' "$i" "${layer_after:-}" "$events" >> "$OUT/after-stop.tsv"
+            printf '%s\t%s\t%s\t%s\n' "$i" "${layer_after:-}" "$events" "stop:$stop_events" >> "$OUT/after-stop.tsv"
 
-            # Siniflandirma: once gonderici (Mac/script) hatalari ayrilir; uygulama
-            # bulgusu yalnizca Mac tarafi basarili oldugunda sayilir.
+            # Siniflandirma: gonderici (Mac/script) sorunlari ayrilir; uygulama
+            # bulgusu yalnizca alicinin olaylari bunu gosterdiginde sayilir.
             result="OK"
-            if [ "$start_st" = "HATA" ] && [ "$t_up" = "-" ]; then
-                result="MAC-START-FAIL"
-            elif [ "$t_up" = "-" ]; then
-                case "$events" in
-                    *"codec=0"*) result="FAIL(baslamadi)" ;;
-                    *) result="FAIL(katman-yok)" ;;
-                esac
-            elif [ "$stop_st" = "HATA" ] && [ -n "$layer_after" ]; then
-                result="MAC-STOP-FAIL"
+            if [ "$t_up" = "-" ]; then
+                if [ "$(ev_get "$events" conn)" = "0" ]; then
+                    result="MAC-START-FAIL"
+                elif [ "$(ev_get "$events" codec)" = "0" ]; then
+                    result="FAIL(baslamadi)"
+                else
+                    result="FAIL(katman-yok)"
+                fi
             elif [ -n "$layer_after" ]; then
-                result="UYARI(stale-layer)"
+                if [ "$(ev_get "$stop_events" disc)" = "0" ]; then
+                    result="MAC-STOP-FAIL"
+                else
+                    result="UYARI(stale-layer)"
+                fi
             fi
             [ "$no_crash" = "HAYIR" ] && result="FAIL(crash)"
             [ "$proc_alive" = "HAYIR" ] && result="FAIL(surec)"

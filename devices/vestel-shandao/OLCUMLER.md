@@ -124,3 +124,21 @@ Yorum:
   - Script, Mac tarafındaki start/stop sonucunu kaydetmediği için bunlar uygulamaya mal edilemedi.
   - Ölçüm, her çevrimde Mac sonucunu, katmanın açılma/kapanma süresini ve alıcı olaylarını (bağlandı/koptu/codec) ayrı ayrı yazacak şekilde genişletildi. Test tekrarlanacak.
 - Araç düzeltmesi: `65-leak-watch` ilk örnekte adb hata metnini PID sanıp sahte bir yeniden başlatma saymıştı.
+
+## M11: 30 dk sızıntı izleme + otomatik bağlan/kopar ×20, 1cb029b, 2026-09-26 16:42–17:12
+
+| metrik | aralık | oturumda | boşta (bitiş) | eğim |
+|---|---|---|---|---|
+| PSS | 38.8–43.2 MB | ~41–43 MB | 39.7 MB, düz | negatif |
+| Thread | 30–35 | 34–35 | 30 (her oturum sonrası) | yok |
+| Graphics | 5.7–7.2 MB | 6.2–7.2 MB | 5.7 MB | negatif |
+| Açık FD | 30–35 | 35 | 30 | negatif |
+| PID | 4682 sabit | | | yeniden başlama yok |
+
+- **Sonuç: bellek, thread ya da FD sızıntısı yok.**
+- LEAK.md'nin "ŞÜPHELİ" sonucu (17 PID değişimi, LMK 23007) bir araç hatasıydı:
+  - `/proc/<pid>/status` sekmeyle ayrılıyor, bu yüzden `Threads:<TAB>30` TSV sütunlarını kaydırdı.
+  - Düzeltildi: `awk` ile okuma, alan temizliği, `leak_trend` bozuk satırı atlıyor.
+  - LMK sayımı artık yalnızca bizim sürecimizin öldürülmesini sayıyor.
+- Soak "alıcı olayları" hep 0 çıktı, bu da bir araç hatasıydı: `logcat -T "MM-DD hh:mm:ss"` adb'de bölünüyor. Epoch biçimine geçildi.
+- Mac arayüzündeki yansıtma durumu güvenilmez: aynı durum value 0/1 ya da üçgen olarak görünebiliyor. Soak artık gerçek durumu TV'den okuyor (video katmanı ve alıcı logu). Mac'e yalnızca tıklanıyor.

@@ -6,6 +6,9 @@
 #   mac-mirror.sh probe            # Denetim Merkezi ogelerini listeler (teshis, hicbir sey degistirmez)
 #   mac-mirror.sh start [TV adi]   # yansitmayi baslatir (varsayilan: $AIRPLAY_NAME ya da "Salon TV")
 #   mac-mirror.sh stop  [TV adi]   # yansitmayi durdurur
+#   mac-mirror.sh click [TV adi]   # durum okumadan cihaz satirina bir kez tiklar
+#                                  # (macOS arayuz durumu guvenilmez; 60-soak gercek
+#                                  #  durumu TV'den okuyup bunu kullanir)
 #
 # Gereken izin (bir kez): Sistem Ayarlari > Gizlilik ve Guvenlik > Erisilebilirlik
 # altinda Terminal (ya da kullandiginiz terminal uygulamasi) acik olmali.
@@ -14,7 +17,7 @@ set -u
 
 ACTION="${1:-}"
 TV="${2:-${AIRPLAY_NAME:-Salon TV}}"
-case "$ACTION" in probe|start|stop) ;; *) echo "Kullanim: $0 {probe|start|stop} [TV adi]" >&2; exit 2 ;; esac
+case "$ACTION" in probe|start|stop|click) ;; *) echo "Kullanim: $0 {probe|start|stop|click} [TV adi]" >&2; exit 2 ;; esac
 [ "$(uname -s)" = "Darwin" ] || { echo "Bu script yalnizca macOS'ta calisir." >&2; exit 2; }
 
 osascript - "$ACTION" "$TV" <<'APPLESCRIPT'
@@ -197,6 +200,12 @@ on run argv
 	end if
 
 	set devState to my stateWithRetry(tv)
+	if act is "click" then
+		tell application "System Events" to click (item 2 of devState)
+		delay 0.5
+		my closePanel()
+		return "click tamam (" & tv & ", arayuz durumu once: " & (item 1 of devState) & ")"
+	end if
 	if act is "start" then
 		if (item 1 of devState) is "on" then
 			my closePanel()

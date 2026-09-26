@@ -66,16 +66,29 @@ THREADS_SLOPE_THRESHOLD = 2.0
 THREADS_DELTA_THRESHOLD = 5.0
 
 
+# Sutun sayisi basliktan farkli oldugu icin atlanan satir sayisi (son parse_tsv).
+SKIPPED_ROWS = 0
+
+
 def parse_tsv(path):
-    """leak.tsv dosyasini okuyup dict listesine cevirir. NA -> None."""
+    """leak.tsv dosyasini okuyup dict listesine cevirir. NA -> None.
+
+    Sutun sayisi basliktan farkli satirlar atlanir: degerlerin icinde kacak
+    sekme (or. eski 65-leak-watch'in "Threads:\t30" yazmasi) sutunlari kaydirip
+    PID/LMK/MemAvailable'i yanlis okutuyordu. Atlanan sayi SKIPPED_ROWS'ta."""
+    global SKIPPED_ROWS
+    SKIPPED_ROWS = 0
     rows = []
     with open(path, "r") as fh:
-        lines = [ln.rstrip("\n") for ln in fh if ln.strip() != ""]
+        lines = [ln.rstrip("\r\n") for ln in fh if ln.strip() != ""]
     if not lines:
         return rows
     header = lines[0].split("\t")
     for line in lines[1:]:
         fields = line.split("\t")
+        if len(fields) != len(header):
+            SKIPPED_ROWS += 1
+            continue
         row = {}
         for i, col in enumerate(header):
             val = fields[i] if i < len(fields) else "NA"
@@ -305,6 +318,9 @@ def render_markdown(analysis):
     lines.append("# Bellek/Kaynak Sizintisi Analizi (leak_trend.py)")
     lines.append("")
     lines.append("Ornek sayisi: %d" % analysis["sample_count"])
+    if SKIPPED_ROWS:
+        lines.append("")
+        lines.append("Uyari: sutun sayisi bozuk %d satir atlandi (bkz. leak.tsv)." % SKIPPED_ROWS)
     lines.append("")
     lines.append("| Metrik | Baslangic | Bitis | Min | Max | Egim (saatlik) |")
     lines.append("|---|---|---|---|---|---|")
