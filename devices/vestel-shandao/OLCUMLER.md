@@ -70,3 +70,17 @@ Yorum:
 - **Gecikme (regresyon):** doğrudan yolda kareler ekran yüzeyinde FIFO sıraya giriyor ve decoder beklediği için gecikme birikiyor. `1dd51c9` ile gösterilmeyi bekleyen kare sayısı en fazla 2'yle sınırlandı.
 - 2 dakikada ~74 MB swap-out: yansıtma sırasında bellek baskısı var.
 - 60 fps için video katmanının DEVICE (donanım düzlemi) olması şart. Sıradaki denemeler: renk aralığı deneyi, ardından tünelli oynatma.
+
+## M6: renk aralığı deneyi (97d3486 + range=limited), Mac, 1080p, 2026-09-26 14:40
+
+| in | dec | presented | dataspace | HWC |
+|---|---|---|---|---|
+| 49.1 | 49.45 | 24.8 | **V0_BT709 LIMITED** (YouTube ile aynı) | **CLIENT** |
+
+- H1 (renk aralığı) elendi. Dataspace YouTube'unkiyle aynı olduğu hâlde HWC katmanı video düzlemine almıyor.
+- Kalan tek fark tampon türü:
+  - YouTube: MTK `externalbuffer-allocator` üzerinden 1.8 KB'lık YV12 handle tamponları (usage 0x42400900)
+  - alıcı: 4 MB'lık YCbCr_420_SP tamponlar (usage 0x2400930)
+- Sonuç: bu TV'nin HWC'si video düzlemine yalnızca vendor handle tamponlarını ya da tünelli (SIDEBAND) akışı alıyor gibi görünüyor. Yan yüklenen alıcı bu yüzden GPU kompozisyonunun ~25 fps tavanında kalıyor.
+
+**Karar (kullanıcı):** ~25 fps kabul edildi. Proje kararlılık, A/V senkronu, soak/sızıntı testleri ve dokümanlarla kapatılacak. Tünelli oynatma ileride denenebilecek bir yol olarak kayıtta duruyor.
