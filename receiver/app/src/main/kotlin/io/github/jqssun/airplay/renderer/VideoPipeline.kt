@@ -40,6 +40,10 @@ class VideoPipeline {
     private var pendingDisplay: Surface? = null
     private var displayDirty = false
     private var clearRequested = false
+    // display hand-off to MediaCodec: a Surface accepts only one producer, so the caller waits
+    // until the GL thread has really released its EGL window
+    private var displaySeq = 0
+    private var boundSeq = 0
     @Volatile private var videoW = 0
     @Volatile private var videoH = 0
 
@@ -53,7 +57,28 @@ class VideoPipeline {
     fun setDisplaySurface(surface: Surface?) = synchronized(lock) {
         pendingDisplay = surface
         displayDirty = true
+        displaySeq++
         lock.notifyAll()
+    }
+
+    // returns once no EGL window is attached, so the display surface can be given to a codec
+    fun detachDisplaySync() {
+        synchronized(lock) {
+            if (!running) return
+            pendingDisplay = null
+            displayDirty = true
+            val target = ++displaySeq
+            lock.notifyAll()
+            val deadline = System.currentTimeMillis() + DETACH_TIMEOUT_MS
+            while (running && boundSeq < target) {
+                val left = deadline - System.currentTimeMillis()
+                if (left <= 0) {
+                    Log.w(TAG, "display detach timed out")
+                    return
+                }
+                lock.wait(left)
+            }
+        }
     }
 
     // drop the last frame so a previous session never reappears on the display
@@ -97,12 +122,14 @@ class VideoPipeline {
             var displayChanged = false
             var doFrame = false
             var doClear = false
+            var seq = 0
             synchronized(lock) {
                 while (running && !frameAvailable && !displayDirty && !clearRequested) lock.wait()
                 if (running && displayDirty) {
                     newDisplay = pendingDisplay
                     displayChanged = true
                     displayDirty = false
+                    seq = displaySeq
                 }
                 if (running && frameAvailable) {
                     frameAvailable = false
@@ -118,9 +145,14 @@ class VideoPipeline {
                 // a frame pending at clear time belongs to the old session: consume, don't show
                 if (doFrame) _consumeOnly()
                 doFrame = false
-                _clear()
+                hasFrame = false
             }
-            if (displayChanged) _bindDisplay(newDisplay)
+            if (displayChanged) {
+                _bindDisplay(newDisplay)
+                synchronized(lock) { boundSeq = seq; lock.notifyAll() }
+            }
+            // after binding, so a surface just handed back by the codec gets painted black too
+            if (doClear) _clear()
             if (doFrame) _consumeAndDraw()
         }
         _releaseGl()
@@ -256,6 +288,7 @@ class VideoPipeline {
 
     companion object {
         private const val TAG = "VideoPipeline"
+        private const val DETACH_TIMEOUT_MS = 500L
 
         private val POS = _fb(floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f))
         private val TEX = _fb(floatArrayOf(0f, 0f, 1f, 0f, 0f, 1f, 1f, 1f))

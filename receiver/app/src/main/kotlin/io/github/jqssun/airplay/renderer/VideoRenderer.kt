@@ -18,6 +18,8 @@ class VideoRenderer(ctx: Context) {
     private var maxFps = 0
     private var codec: MediaCodec? = null
     private var displaySurface: Surface? = null
+    // where the codec currently renders: the display itself (direct) or the pipeline's sink
+    private var codecTarget: Surface? = null
     private var currentH265 = false
     private var videoWidth = 0
     private var videoHeight = 0
@@ -54,15 +56,39 @@ class VideoRenderer(ctx: Context) {
         if (MirrorStats.ENABLED) MirrorStats.setReceived(w, h)
     }
 
-    // doesn't restart codec; decoder renders into pipeline's own persistent surface
+    // doesn't restart codec: switches its output surface (direct) or re-points the pipeline
     fun setSurface(surface: Surface) = synchronized(lock) {
         displaySurface = surface
-        pipeline.setDisplaySurface(surface)
+        val c = codec
+        if (c == null || !DIRECT_OUTPUT) {
+            pipeline.setDisplaySurface(surface)
+            return@synchronized
+        }
+        if (codecTarget === surface) return@synchronized
+        pipeline.detachDisplaySync()
+        try {
+            c.setOutputSurface(surface)
+            codecTarget = surface
+        } catch (e: Exception) {
+            Log.w(TAG, "setOutputSurface to display failed; using GL pipeline", e)
+            pipeline.setDisplaySurface(surface)
+        }
     }
 
     fun clearSurface(surface: Surface) = synchronized(lock) {
         if (displaySurface !== surface) return@synchronized
         displaySurface = null
+        val c = codec
+        if (c != null && codecTarget === surface) {
+            // surface is about to be destroyed: park the codec on the pipeline sink
+            try {
+                c.setOutputSurface(pipeline.inputSurface ?: return@synchronized)
+                codecTarget = pipeline.inputSurface
+            } catch (e: Exception) {
+                Log.w(TAG, "setOutputSurface to sink failed; stopping codec", e)
+                stopCodec()
+            }
+        }
         pipeline.setDisplaySurface(null)
     }
 
@@ -92,6 +118,9 @@ class VideoRenderer(ctx: Context) {
 
     fun stopSession() = synchronized(lock) {
         stopCodec()
+        // a released codec leaves its last frame on the display; hand the surface back to the
+        // pipeline so it can be painted black
+        displaySurface?.let { pipeline.setDisplaySurface(it) }
         pipeline.clear()
     }
 
@@ -197,21 +226,41 @@ class VideoRenderer(ctx: Context) {
     private fun startCodec(h265: Boolean) {
         pipeline.start()
         pipeline.setVideoSize(videoWidth, videoHeight)
-        val s = pipeline.inputSurface ?: return
+        val sink = pipeline.inputSurface ?: return
+        // direct: the codec's YUV buffers go straight to the SurfaceView, which the HWC can put on
+        // the video plane; drawing them with GL gave an RGBA layer composited by the GPU (CLIENT)
+        val display = displaySurface?.takeIf { DIRECT_OUTPUT && it.isValid }
+        if (display != null) pipeline.detachDisplaySync()
+        val s = display ?: sink
         currentH265 = h265
         val mime = if (h265) DecoderSelector.HEVC else DecoderSelector.AVC
         val info = (if (h265) hevcDecoder else avcDecoder) ?: error("no decoder selected for $mime")
 
         firstFrameQueued = false
         try {
-            _startWithLadder(info, mime, s, h265)
+            _startOn(info, mime, s, sink, display, h265)
         } catch (e: Exception) {
             // strict hw decoders reject configs beyond their real limits
             val sw = selector.software(mime, videoWidth, videoHeight) ?: throw e
             Log.w(TAG, "Hardware decoder failed, trying software fallback", e)
-            _startWithLadder(sw, mime, s, h265)
+            _startOn(sw, mime, s, sink, display, h265)
         }
-        Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight} ($codecName)")
+        Log.i(TAG, "Video codec started: $mime ${videoWidth}x${videoHeight} ($codecName) " +
+            "output=${if (codecTarget === display && display != null) "direct" else "gl"}")
+    }
+
+    // tries the display first; if the codec refuses it, falls back to the GL pipeline sink
+    private fun _startOn(info: MediaCodecInfo, mime: String, s: Surface, sink: Surface, display: Surface?, h265: Boolean) {
+        try {
+            _startWithLadder(info, mime, s, h265)
+            codecTarget = s
+        } catch (e: Exception) {
+            if (s === sink) throw e
+            Log.w(TAG, "Direct output failed; falling back to GL pipeline", e)
+            display?.let { pipeline.setDisplaySurface(it) }
+            _startWithLadder(info, mime, sink, h265)
+            codecTarget = sink
+        }
     }
 
     private fun _startWithLadder(info: MediaCodecInfo, mime: String, s: Surface, h265: Boolean) {
@@ -250,6 +299,7 @@ class VideoRenderer(ctx: Context) {
     private fun _startDecoder(c: MediaCodec, format: MediaFormat, surface: Surface, h265: Boolean) {
         try {
             c.configure(format, surface, null, 0)
+            c.setVideoScalingMode(MediaCodec.VIDEO_SCALING_MODE_SCALE_TO_FIT)
             c.start()
         } catch (e: Exception) {
             try { c.release() } catch (_: Exception) {}
@@ -273,6 +323,7 @@ class VideoRenderer(ctx: Context) {
             } catch (_: Exception) {}
         }
         codec = null
+        codecTarget = null
         if (MirrorStats.ENABLED) MirrorStats.onSessionEnd()
     }
 
@@ -336,5 +387,7 @@ class VideoRenderer(ctx: Context) {
         private const val FEED_WAIT_US = 20_000L
         private const val FEED_RETRIES = 10
         private const val FIRST_FEED_RETRIES = 50
+        // decode straight into the display surface (hardware video plane); false = upstream GL path
+        const val DIRECT_OUTPUT = true
     }
 }
